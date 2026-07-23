@@ -2,13 +2,27 @@
 
 Command-line tools for **[Cheshire Terminal](https://cheshireterminal.ai)** — site auth, skills discovery, agent registry registration, and dual-rail forge prepare (via [`cheshire-terminal-agents`](https://www.npmjs.com/package/cheshire-terminal-agents)).
 
+**Product hub:** [cheshireterminal.ai/cli](https://cheshireterminal.ai/cli)
+
 ```
 Default origin:  https://cheshireterminal.ai
 Override:        CHESHIRE_SITE_URL
 API key:         CHESHIRE_API_KEY  (ct_sk_… developer keys)
 ```
 
-## Quick start
+## One-shot install
+
+```bash
+curl -fsSL https://cheshireterminal.ai/api/cli/install.sh | bash
+# then:
+export PATH="$HOME/.local/bin:$PATH"
+cheshire-cli help
+cheshire-cli status
+```
+
+Or open the hub page for copy-paste commands and live status: **https://cheshireterminal.ai/cli**
+
+## Quick start (from this repo)
 
 ```bash
 chmod +x cheshire-cli.sh clawd-cli.sh clawd-connect.sh
