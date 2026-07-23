@@ -7,7 +7,7 @@
 # Cheshire Terminal CLI
 
 <p align="center">
-  <strong>Terminal into the cat.</strong><br/>
+  <strong>Terminal into the Clawd</strong><br/>
   One-shot install · site SIWS / API keys · skills · agent registry · dual-rail forge prepare<br/>
   Default origin: <code>https://cheshireterminal.ai</code>
 </p>
