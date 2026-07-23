@@ -15,6 +15,11 @@
       "description": "REST API for skills, agents, auth, and registry operations"
     },
     {
+      "name": "gateway",
+      "endpoint": "https://cheshireterminal.ai/gateway",
+      "description": "Developer API gateway — scoped keys, OpenAPI, /api/gateway/* brand alias"
+    },
+    {
       "name": "marketplace",
       "endpoint": "https://cheshireterminal.ai/api/skills",
       "description": "Skills catalog API"

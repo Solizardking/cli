@@ -15,6 +15,16 @@
       "description": "REST API — developer status, skills, auth, agent registry, Metaplex agents"
     },
     {
+      "name": "gateway",
+      "endpoint": "https://cheshireterminal.ai/gateway",
+      "description": "Developer API gateway portal — scoped ct_sk_ keys, OpenAPI, catalog, llms.txt (/api/gateway/* alias)"
+    },
+    {
+      "name": "gateway-api",
+      "endpoint": "https://cheshireterminal.ai/api/gateway",
+      "description": "Branded gateway API prefix — status, openapi.json, catalog, skills (same keys as /api/*)"
+    },
+    {
       "name": "agents",
       "endpoint": "https://cheshireterminal.ai/agents",
       "description": "Open agent hub and catalog"

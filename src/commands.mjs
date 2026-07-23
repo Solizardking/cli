@@ -5,6 +5,9 @@ import { readFile } from "node:fs/promises";
 import {
   CLI_BRAND,
   CLI_NAME,
+  CLI_PACKAGE_NAME,
+  CLI_HUB_URL,
+  CLI_GATEWAY_URL,
   DEFAULT_SITE_URL,
   resolveSiteUrl,
   resolveApiKey,
@@ -14,53 +17,64 @@ import {
   loadRegistrationJson,
 } from "./config.mjs";
 import { createClient, CheshireHttpError } from "./client.mjs";
+import {
+  API_SURFACES,
+  catalogAgentToRegisterBody,
+  hubLinks,
+  normalizeBrowserAgents,
+  tryLoadLocalPackageCatalog,
+  toRegistryName,
+} from "./catalog.mjs";
 
 export function usageText() {
   return `${CLI_BRAND} CLI (${CLI_NAME})
+Terminal into the clawd.
+npm: ${CLI_PACKAGE_NAME} · hub: ${CLI_HUB_URL} · gateway: ${CLI_GATEWAY_URL}
 
 Usage:
   cheshire-cli <command> [options]
-  clawd-cli.sh <command> [options]     # compatibility wrapper
+  npx cheshire-terminal-cli <command>
+
+Install:
+  npm i -g cheshire-terminal-cli
+  # or: curl -fsSL ${DEFAULT_SITE_URL}/api/cli/install.sh | bash
 
 Environment:
   CHESHIRE_SITE_URL     Site origin (default: ${DEFAULT_SITE_URL})
-  CHESHIRE_API_KEY      Developer API key (ct_sk_…) for authenticated calls
+  CHESHIRE_API_KEY      Developer API key (ct_sk_…) — mint at ${CLI_GATEWAY_URL}
   CHESHIRE_CREDENTIALS_PATH  Optional credentials JSON path
 
-Discovery:
-  help                  Show this help
-  status                Site + developer status + registry health
-  skills [query]        List skills (optional search query)
-  skills:search <q>     Search skills
-  agents                Agent catalog summary
-  registry              Agent registry proxy status
-  connect               Print connection / credential wiring tips
+Discovery (synced to site UI):
+  help | status | connect | sync
+  skills [query] | skills:search <q>       → /skills · /api/skills
+  agents | agents:list | agents:show --id  → /agents · /api/clawd/browser-agents
+  registry | registry:list                 → /agent-registry · /api/agent-registry
 
 User registration / auth:
-  register:user --wallet <base58>          Fetch SIWS challenge (sign-in payload)
-  login --wallet <base58> --signature <s> --message <msg>
-                                           Verify signed challenge; store session hints
-  whoami                                   Show credential / principal status
-  set-key --api-key <ct_sk_…>              Persist API key locally
+  register:user --wallet <base58>
+  login --wallet <pk> --signature <sig> --message <msg>
+  whoami | set-key --api-key ct_sk_…
 
-Agent registration:
-  register:agent --dry-run [--file reg.json] [--name slug]
-                                           Build agent-registry payload (Cheshire host)
-  register:agent --confirm [--file reg.json] [--name slug]
-                                           POST /api/agent-registry/register
-  register:prepare --file reg.json         Alias for dry-run prepare
-  forge:prepare --file reg.json            Delegate prepare hints (cheshire-terminal-agents)
+Agent registration (appears on /agent-registry frontend):
+  register:agent --id <catalog-id> [--dry-run|--confirm]
+  register:agent --name <slug> [--title …] [--description …] [--confirm]
+  register:agent --file reg.json [--confirm]
+  register:all [--dry-run|--confirm] [--limit N]   # every browser-catalog agent
+  forge:prepare [--file reg.json]                  # dual-rail via cheshire-terminal-agents
 
-Options common to many commands:
-  --site <url>          Override CHESHIRE_SITE_URL
-  --json                Machine-readable JSON only (default for most commands)
-  --api-key <key>       One-shot API key (not printed back)
+Source of truth:
+  Hub UI     monorepo agents/          → GET /api/clawd/browser-agents
+  Skills     skills + robinhood-agents → GET /api/skills
+  Registry   registry.cheshireterminal.ai via /api/agent-registry
+  Forge npm  robinhood-agents package  = cheshire-terminal-agents
+  Upstream   github.com/solizardking/agents (publish repo; do not dual-wire)
 
 Examples:
-  cheshire-cli status
-  cheshire-cli skills
-  CHESHIRE_SITE_URL=https://cheshireterminal.ai cheshire-cli register:user --wallet <pubkey>
-  cheshire-cli register:agent --dry-run --name my-agent
+  cheshire-cli sync
+  cheshire-cli agents:list
+  cheshire-cli register:agent --id airdrop-hunter --dry-run
+  cheshire-cli register:all --dry-run
+  cheshire-cli register:all --confirm --limit 5
 `;
 }
 
@@ -156,6 +170,14 @@ export async function cmdStatus(options = {}) {
     skills: null,
     registry: null,
     metaplex: null,
+    gateway: null,
+    hubs: {
+      cli: `${siteUrl}/cli`,
+      gateway: `${siteUrl}/gateway`,
+      agents: `${siteUrl}/agents`,
+      forge: `${siteUrl}/agents/forge`,
+      agentsGithub: "https://github.com/solizardking/agents",
+    },
     errors: [],
   };
 
@@ -213,8 +235,38 @@ export async function cmdStatus(options = {}) {
     result.errors.push({ surface: "metaplex", message: err.message, status: err.status });
   }
 
+  try {
+    const { data } = await client.get("/api/gateway/status");
+    result.gateway = {
+      status: data?.status ?? null,
+      name: data?.name ?? null,
+      origin: data?.origin ?? siteUrl,
+      hub: `${siteUrl}/gateway`,
+      openapi: `${siteUrl}/api/gateway/openapi.json`,
+      routes: data?.routes
+        ? {
+            docs: data.routes.docs ?? data.routes.gatewayPortal ?? "/gateway",
+            openapi: data.routes.gatewayOpenapi ?? "/api/gateway/openapi.json",
+            catalog: data.routes.gatewayCatalog ?? data.routes.catalog ?? "/api/gateway/catalog",
+          }
+        : {
+            docs: `${siteUrl}/gateway`,
+            openapi: `${siteUrl}/api/gateway/openapi.json`,
+            catalog: `${siteUrl}/api/gateway/catalog`,
+          },
+    };
+  } catch (err) {
+    result.errors.push({ surface: "gateway", message: err.message, status: err.status });
+    result.gateway = {
+      status: null,
+      hub: `${siteUrl}/gateway`,
+      openapi: `${siteUrl}/api/gateway/openapi.json`,
+    };
+  }
+
   const healthy =
     result.developer?.status === "ok" ||
+    result.gateway?.status === "ok" ||
     (typeof result.skills?.count === "number" && result.skills.count > 0) ||
     result.registry?.ok === true;
 
@@ -223,20 +275,26 @@ export async function cmdStatus(options = {}) {
 
 export async function cmdSkills(options = {}) {
   const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const hubs = hubLinks(client.siteUrl);
   const query = options.query?.trim();
   if (query) {
     const { data } = await client.get(
-      `/api/skills/search?q=${encodeURIComponent(query)}`,
+      `${API_SURFACES.skillsSearch}?q=${encodeURIComponent(query)}`,
     );
     return {
       siteUrl: client.siteUrl,
+      hub: hubs.skills,
+      api: `${hubs.api.skills}/search?q=${encodeURIComponent(query)}`,
       query,
       ...normalizeSkillsPayload(data),
     };
   }
-  const { data } = await client.get("/api/skills");
+  const { data } = await client.get(API_SURFACES.skills);
   return {
     siteUrl: client.siteUrl,
+    hub: hubs.skills,
+    hubStore: hubs.skillsStore,
+    api: hubs.api.skills,
     ...normalizeSkillsPayload(data),
   };
 }
@@ -261,47 +319,202 @@ function normalizeSkillsPayload(data) {
   };
 }
 
+async function fetchBrowserCatalog(client) {
+  const { data } = await client.get(API_SURFACES.browserAgents);
+  return normalizeBrowserAgents(data);
+}
+
 export async function cmdAgents(options = {}) {
   const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
-  const out = {
-    siteUrl: client.siteUrl,
-    browserAgents: null,
-    registryHealth: null,
-  };
+  const hubs = hubLinks(client.siteUrl);
+  const showId = options.id?.trim();
+  const listMode = options.list || options.command === "agents:list";
+
+  const catalog = await fetchBrowserCatalog(client);
+  let registryHealth = null;
   try {
-    const { data } = await client.get("/api/clawd/browser-agents");
-    out.browserAgents = {
-      importedAt: data?.importedAt ?? null,
-      integration: data?.integration?.manifest
-        ? {
-            sourceRoot: data.integration.manifest.sourceRoot,
-            targetRoot: data.integration.manifest.targetRoot,
-            importedAt: data.integration.manifest.importedAt,
-          }
-        : null,
-      roots: Array.isArray(data?.integration?.roots)
-        ? data.integration.roots.length
-        : Array.isArray(data?.roots)
-          ? data.roots.length
-          : null,
-      keys: data && typeof data === "object" ? Object.keys(data).slice(0, 20) : [],
+    const { data } = await client.get(API_SURFACES.registryStatus);
+    registryHealth = {
+      ok: data?.ok ?? null,
+      upstream: data?.upstream ?? null,
+      registerPath: data?.registerPath ?? null,
+      ui: data?.ui ?? null,
     };
   } catch (err) {
-    out.browserAgents = { error: err.message, status: err.status };
+    registryHealth = { error: err.message, status: err.status };
   }
-  try {
-    const { data } = await client.get("/api/agent-registry/status");
-    out.registryHealth = data;
-  } catch (err) {
-    out.registryHealth = { error: err.message, status: err.status };
+
+  const localPkg = await tryLoadLocalPackageCatalog();
+
+  if (showId) {
+    const agent =
+      catalog.agents.find((a) => a.id === showId || a.registryName === showId) || null;
+    if (!agent) {
+      return {
+        ok: false,
+        siteUrl: client.siteUrl,
+        hub: hubs.agents,
+        error: `Agent not found in browser catalog: ${showId}`,
+        hint: "Run cheshire-cli agents:list for ids",
+        count: catalog.count,
+      };
+    }
+    return {
+      ok: true,
+      siteUrl: client.siteUrl,
+      hub: hubs.agents,
+      agent,
+      frontend: {
+        chat: `${client.siteUrl}${agent.hubPath}`,
+        forge: `${client.siteUrl}${agent.forgePath}`,
+        mint: `${client.siteUrl}${agent.mintPath}`,
+        registry: hubs.registry,
+      },
+      registerDryRun: catalogAgentToRegisterBody(agent),
+    };
   }
-  return out;
+
+  const ids = catalog.agents.map((a) => a.id);
+  return {
+    ok: true,
+    siteUrl: client.siteUrl,
+    hub: hubs.agents,
+    api: hubs.api.browserAgents,
+    count: catalog.count,
+    importedAt: catalog.importedAt,
+    sourceRoot: catalog.sourceRoot,
+    registryHealth,
+    localPackage: {
+      available: localPkg.available,
+      package: localPkg.package,
+      count: localPkg.count,
+      hint: localPkg.hint || null,
+    },
+    // Full id list so terminal can register any agent
+    identifiers: ids,
+    agents: listMode
+      ? catalog.agents
+      : catalog.agents.slice(0, 40).map((a) => ({
+          id: a.id,
+          title: a.title,
+          category: a.category,
+          registryName: a.registryName,
+        })),
+    truncated: !listMode && catalog.agents.length > 40,
+    note: listMode
+      ? "Full browser-agents catalog (same as /agents frontend)."
+      : "Summary (first 40). Use agents:list for full catalog.",
+  };
 }
 
 export async function cmdRegistry(options = {}) {
   const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
-  const { data } = await client.get("/api/agent-registry/status");
-  return { siteUrl: client.siteUrl, ...data };
+  const hubs = hubLinks(client.siteUrl);
+  const { data: status } = await client.get(API_SURFACES.registryStatus);
+
+  let items = null;
+  let listError = null;
+  if (options.list) {
+    try {
+      const limit = Math.min(Number(options.limit) || 50, 200);
+      const { data } = await client.get(
+        `${API_SURFACES.registryAgents}?limit=${limit}`,
+      );
+      items = Array.isArray(data?.items) ? data.items : data;
+    } catch (err) {
+      listError = { message: err.message, status: err.status };
+    }
+  }
+
+  return {
+    siteUrl: client.siteUrl,
+    hub: hubs.registry,
+    hubAliases: hubs.registryAliases,
+    api: hubs.api.registryStatus,
+    registerPath: status?.registerPath || API_SURFACES.registryRegister,
+    ...status,
+    items,
+    listError,
+  };
+}
+
+/**
+ * Full surface sync report: skills + agents + registry + gateway + frontend hubs.
+ */
+export async function cmdSync(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const hubs = hubLinks(client.siteUrl);
+  const report = {
+    ok: true,
+    brand: CLI_BRAND,
+    siteUrl: client.siteUrl,
+    checkedAt: new Date().toISOString(),
+    hubs,
+    surfaces: {},
+    errors: [],
+  };
+
+  async function probe(name, path) {
+    try {
+      const { data, status } = await client.get(path);
+      report.surfaces[name] = { ok: true, httpStatus: status, path };
+      return data;
+    } catch (err) {
+      report.ok = false;
+      report.surfaces[name] = {
+        ok: false,
+        path,
+        error: err.message,
+        status: err.status,
+      };
+      report.errors.push({ surface: name, message: err.message });
+      return null;
+    }
+  }
+
+  const skills = await probe("skills", API_SURFACES.skills);
+  const browser = await probe("browserAgents", API_SURFACES.browserAgents);
+  const registry = await probe("registry", API_SURFACES.registryStatus);
+  const gateway = await probe("gateway", API_SURFACES.gatewayStatus);
+  const developer = await probe("developer", API_SURFACES.developerStatus);
+
+  const catalog = normalizeBrowserAgents(browser || {});
+  report.skills = {
+    count: skills?.count ?? null,
+    hub: hubs.skills,
+  };
+  report.agents = {
+    count: catalog.count,
+    identifiersSample: catalog.agents.slice(0, 12).map((a) => a.id),
+    hub: hubs.agents,
+    sourceRoot: catalog.sourceRoot,
+  };
+  report.registry = {
+    ok: registry?.ok ?? null,
+    registerPath: registry?.registerPath ?? null,
+    hub: hubs.registry,
+  };
+  report.gateway = {
+    status: gateway?.status ?? null,
+    hub: hubs.gateway,
+  };
+  report.developer = {
+    status: developer?.status ?? null,
+  };
+  report.sourceOfTruth = {
+    hubUi: "monorepo agents/ → /api/clawd/browser-agents",
+    skills: "skills + robinhood-agents/skills → /api/skills",
+    registry: "registry.cheshireterminal.ai via /api/agent-registry",
+    forgePackage: "cheshire-terminal-agents (monorepo robinhood-agents)",
+    upstreamPublish: "github.com/solizardking/agents",
+  };
+  report.next = [
+    `${CLI_NAME} agents:list`,
+    `${CLI_NAME} register:agent --id <id> --dry-run`,
+    `${CLI_NAME} register:all --dry-run`,
+    `Open ${hubs.agents} and ${hubs.registry} to verify frontend`,
+  ];
+  return report;
 }
 
 /**
@@ -443,31 +656,55 @@ export async function cmdSetKey(options = {}) {
 
 export async function cmdRegisterAgent(options = {}) {
   const siteUrl = resolveSiteUrl(options.siteUrl);
-  const file = options.file || registrationJsonPath();
-  let registration;
-  try {
-    registration = await loadRegistrationJson(file);
-  } catch (err) {
-    // Fallback minimal registration if fixture missing
-    registration = {
-      name: options.name || "cheshire-terminal-agent",
-      description: "Cheshire Terminal agent",
-      image: `${siteUrl}/og-image.png`,
-      services: [
-        { name: "web", endpoint: siteUrl },
-        { name: "api", endpoint: `${siteUrl}/api` },
-        { name: "mcp", endpoint: `${siteUrl}/mcp` },
-      ],
-    };
+  const hubs = hubLinks(siteUrl);
+  const catalogId = options.id?.trim();
+  let publicBody;
+  let source = "file";
+
+  if (catalogId) {
+    // Resolve agent from live browser catalog (same source as /agents frontend)
+    const client = createClient({ siteUrl, apiKey: options.apiKey });
+    const catalog = await fetchBrowserCatalog(client);
+    const agent = catalog.agents.find(
+      (a) => a.id === catalogId || a.registryName === toRegistryName(catalogId),
+    );
+    if (!agent) {
+      return {
+        ok: false,
+        brand: CLI_BRAND,
+        siteUrl,
+        error: `Catalog agent not found: ${catalogId}`,
+        availableSample: catalog.agents.slice(0, 20).map((a) => a.id),
+        hint: "cheshire-cli agents:list",
+      };
+    }
+    publicBody = catalogAgentToRegisterBody(agent, options);
+    source = "browser-agents";
+  } else {
+    const file = options.file || registrationJsonPath();
+    let registration;
+    try {
+      registration = await loadRegistrationJson(file);
+    } catch {
+      registration = {
+        name: options.name || "cheshire-terminal-agent",
+        description: "Cheshire Terminal agent",
+        image: `${siteUrl}/og-image.png`,
+        services: [
+          { name: "web", endpoint: siteUrl },
+          { name: "api", endpoint: `${siteUrl}/api` },
+          { name: "gateway", endpoint: `${siteUrl}/gateway` },
+          { name: "mcp", endpoint: `${siteUrl}/mcp` },
+        ],
+      };
+    }
+    const payload = buildAgentRegistryPayload(registration, { ...options, siteUrl });
+    const { _cheshire, ...rest } = payload;
+    publicBody = rest;
+    source = options.file ? "file" : "default-registration";
   }
 
-  const payload = buildAgentRegistryPayload(registration, {
-    ...options,
-    siteUrl,
-  });
-
-  // Strip internal field for live POST
-  const { _cheshire, ...publicBody } = payload;
+  const targetUrl = `${siteUrl}${API_SURFACES.registryRegister}`;
 
   if (!options.confirm) {
     return {
@@ -475,26 +712,35 @@ export async function cmdRegisterAgent(options = {}) {
       mode: "dry-run",
       brand: CLI_BRAND,
       siteUrl,
-      targetUrl: `${siteUrl}/api/agent-registry/register`,
+      source,
+      targetUrl,
       method: "POST",
-      file,
+      frontend: {
+        registry: hubs.registry,
+        agents: hubs.agents,
+      },
       payload: publicBody,
-      cheshire: _cheshire,
-      note: "Pass --confirm to POST to the Cheshire agent registry (rate-limited public register).",
+      note: "Pass --confirm to POST. Registered agents appear on /agent-registry (frontend polls /api/agent-registry/v0/agents).",
     };
   }
 
   const client = createClient({ siteUrl, apiKey: options.apiKey });
   try {
-    const { data, status } = await client.post("/api/agent-registry/register", publicBody);
+    const { data, status } = await client.post(API_SURFACES.registryRegister, publicBody);
     return {
       ok: status >= 200 && status < 300,
       mode: "live",
       brand: CLI_BRAND,
       siteUrl,
+      source,
       httpStatus: status,
       request: publicBody,
       response: data,
+      frontend: {
+        registry: hubs.registry,
+        agents: hubs.agents,
+        refresh: `${hubs.api.registryAgents}?limit=20`,
+      },
     };
   } catch (err) {
     if (err instanceof CheshireHttpError) {
@@ -503,6 +749,7 @@ export async function cmdRegisterAgent(options = {}) {
         mode: "live",
         brand: CLI_BRAND,
         siteUrl,
+        source,
         httpStatus: err.status,
         request: publicBody,
         error: err.message,
@@ -513,19 +760,112 @@ export async function cmdRegisterAgent(options = {}) {
   }
 }
 
+/**
+ * Register every agent from the live browser catalog (same list as /agents).
+ * Default dry-run; --confirm writes (rate-limited).
+ */
+export async function cmdRegisterAll(options = {}) {
+  const siteUrl = resolveSiteUrl(options.siteUrl);
+  const hubs = hubLinks(siteUrl);
+  const client = createClient({ siteUrl, apiKey: options.apiKey });
+  const catalog = await fetchBrowserCatalog(client);
+  const limit = Math.min(
+    Math.max(1, Number(options.limit) || catalog.agents.length),
+    catalog.agents.length || 1,
+  );
+  const slice = catalog.agents.slice(0, limit);
+  const confirm = Boolean(options.confirm);
+
+  const results = [];
+  for (const agent of slice) {
+    const body = catalogAgentToRegisterBody(agent, options);
+    if (!confirm) {
+      results.push({
+        id: agent.id,
+        mode: "dry-run",
+        ok: true,
+        payload: body,
+      });
+      continue;
+    }
+    try {
+      const { data, status } = await client.post(API_SURFACES.registryRegister, body);
+      results.push({
+        id: agent.id,
+        mode: "live",
+        ok: status >= 200 && status < 300,
+        httpStatus: status,
+        name: body.name,
+        response: data,
+      });
+      // Soft pacing for public rate limit (12/min on register)
+      await new Promise((r) => setTimeout(r, 350));
+    } catch (err) {
+      results.push({
+        id: agent.id,
+        mode: "live",
+        ok: false,
+        name: body.name,
+        error: err.message,
+        status: err.status,
+      });
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  const okCount = results.filter((r) => r.ok).length;
+  return {
+    ok: okCount === results.length,
+    brand: CLI_BRAND,
+    siteUrl,
+    mode: confirm ? "live" : "dry-run",
+    catalogCount: catalog.count,
+    attempted: results.length,
+    succeeded: okCount,
+    failed: results.length - okCount,
+    frontend: {
+      agents: hubs.agents,
+      registry: hubs.registry,
+      note: "After --confirm, open /agent-registry — UI refetches GET /api/agent-registry/v0/agents",
+    },
+    results,
+  };
+}
+
 export async function cmdConnect(options = {}) {
   const siteUrl = resolveSiteUrl(options.siteUrl);
+  const hubs = hubLinks(siteUrl);
   return {
     brand: CLI_BRAND,
     siteUrl,
+    hubs,
+    sourceOfTruth: {
+      hubUi: "monorepo agents/ → /api/clawd/browser-agents → /agents",
+      skills: "skills + robinhood-agents/skills → /api/skills → /skills",
+      registry: "registry.cheshireterminal.ai → /api/agent-registry → /agent-registry",
+      forge: "monorepo robinhood-agents = npm cheshire-terminal-agents",
+      upstream: "github.com/solizardking/agents (publish only; do not dual-wire CLI to a second tree)",
+    },
     endpoints: {
       web: siteUrl,
       api: `${siteUrl}/api`,
+      cliHub: hubs.cli,
+      gateway: hubs.gateway,
+      gatewayApi: `${siteUrl}/api/gateway`,
+      gatewayStatus: `${siteUrl}/api/gateway/status`,
+      gatewayOpenapi: `${siteUrl}/api/gateway/openapi.json`,
+      gatewayLlms: `${siteUrl}/api/gateway/llms.txt`,
+      gatewayCatalog: `${siteUrl}/api/gateway/catalog`,
       developerStatus: `${siteUrl}/api/developer/status`,
-      skills: `${siteUrl}/api/skills`,
-      agentsHub: `${siteUrl}/agents`,
-      agentForge: `${siteUrl}/agents/forge`,
-      agentRegistry: `${siteUrl}/agent-registry`,
+      skills: hubs.api.skills,
+      skillsHub: hubs.skills,
+      browserAgents: hubs.api.browserAgents,
+      agentsHub: hubs.agents,
+      agentForge: hubs.forge,
+      agentRegistry: hubs.registry,
+      registryApi: hubs.api.registryStatus,
+      registryRegister: hubs.api.register,
+      agentsGithub: "https://github.com/solizardking/agents",
       registryNative: "https://registry.cheshireterminal.ai/",
       mcp: `${siteUrl}/mcp`,
       x402: `${siteUrl}/x402`,
@@ -537,6 +877,15 @@ export async function cmdConnect(options = {}) {
       envApiKey: "CHESHIRE_API_KEY",
       envSite: "CHESHIRE_SITE_URL",
       headers: ["Authorization: Bearer ct_sk_…", "x-api-key: ct_sk_…"],
+      note: "Same ct_sk_ keys work on /api/* and the branded /api/gateway/* alias (see /gateway).",
+    },
+    npm: {
+      package: CLI_PACKAGE_NAME,
+      install: `npm i -g ${CLI_PACKAGE_NAME}`,
+      npx: `npx ${CLI_PACKAGE_NAME}`,
+      registry: "https://www.npmjs.com/package/cheshire-terminal-cli",
+      hub: CLI_HUB_URL,
+      gateway: CLI_GATEWAY_URL,
     },
     forgePackage: {
       npm: "cheshire-terminal-agents",
@@ -544,10 +893,12 @@ export async function cmdConnect(options = {}) {
       docs: "https://www.npmjs.com/package/cheshire-terminal-agents",
     },
     next: [
+      `npm i -g ${CLI_PACKAGE_NAME}`,
       `${CLI_NAME} status`,
       `${CLI_NAME} register:user --wallet <pubkey>`,
       `${CLI_NAME} set-key --api-key ct_sk_…`,
       `${CLI_NAME} register:agent --dry-run`,
+      `Open ${siteUrl}/gateway for scoped API keys + OpenAPI`,
     ],
   };
 }
@@ -599,15 +950,19 @@ export async function runCommand(argv) {
     signature: flags.signature,
     message: flags.message,
     file: flags.file,
-    name: flags.name || positionals[0],
+    id: flags.id,
+    name: flags.name || (!flags.id ? positionals[0] : undefined),
     query: flags.query || positionals[0],
     title: flags.title,
     description: flags.description,
     tag: flags.tag,
+    limit: flags.limit,
+    list: Boolean(flags.list),
     dryRun: flags["dry-run"] || !flags.confirm,
     confirm: Boolean(flags.confirm),
     force: Boolean(flags.force),
     key: flags.key,
+    command,
   };
 
   try {
@@ -620,6 +975,10 @@ export async function runCommand(argv) {
       case "status":
         result = await cmdStatus(opts);
         break;
+      case "sync":
+      case "surfaces":
+        result = await cmdSync(opts);
+        break;
       case "skills":
       case "skills:list":
         result = await cmdSkills(opts);
@@ -630,9 +989,24 @@ export async function runCommand(argv) {
       case "agents":
         result = await cmdAgents(opts);
         break;
+      case "agents:list":
+      case "list-agents":
+        result = await cmdAgents({ ...opts, list: true });
+        break;
+      case "agents:show":
+      case "show-agent":
+        result = await cmdAgents({
+          ...opts,
+          id: flags.id || positionals[0],
+        });
+        break;
       case "registry":
       case "agent-registry":
         result = await cmdRegistry(opts);
+        break;
+      case "registry:list":
+      case "list-registry":
+        result = await cmdRegistry({ ...opts, list: true });
         break;
       case "connect":
         result = await cmdConnect(opts);
@@ -662,6 +1036,11 @@ export async function runCommand(argv) {
           ...opts,
           confirm: command === "register:prepare" ? false : opts.confirm,
         });
+        break;
+      case "register:all":
+      case "register-all":
+      case "sync:register":
+        result = await cmdRegisterAll(opts);
         break;
       case "forge:prepare":
       case "forge-prepare":

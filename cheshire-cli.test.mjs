@@ -21,8 +21,17 @@ import {
   cmdStatus,
   cmdRegisterUser,
   cmdRegisterAgent,
+  cmdRegisterAll,
+  cmdAgents,
+  cmdSync,
   cmdConnect,
 } from "./src/commands.mjs";
+import {
+  normalizeBrowserAgents,
+  catalogAgentToRegisterBody,
+  toRegistryName,
+  hubLinks,
+} from "./src/catalog.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI = join(__dirname, "cheshire-cli.mjs");
@@ -167,10 +176,16 @@ describe("live site commands (network)", () => {
     assert.doesNotMatch(JSON.stringify(result), /solanaclawd\.com/);
   });
 
-  it("connect surfaces Cheshire endpoints", async () => {
+  it("connect surfaces Cheshire endpoints including gateway", async () => {
     const result = await cmdConnect({ siteUrl: SITE });
     assert.match(result.endpoints.api, /cheshireterminal\.ai\/api/);
+    assert.match(result.endpoints.gateway, /cheshireterminal\.ai\/gateway/);
+    assert.match(result.endpoints.gatewayStatus, /\/api\/gateway\/status/);
+    assert.match(result.endpoints.cliHub, /\/cli/);
+    assert.equal(result.endpoints.agentsGithub, "https://github.com/solizardking/agents");
     assert.equal(result.credentials.envApiKey, "CHESHIRE_API_KEY");
+    assert.equal(result.npm?.package, "cheshire-terminal-cli");
+    assert.match(result.npm?.install || "", /cheshire-terminal-cli/);
     assert.equal(result.forgePackage.npm, "cheshire-terminal-agents");
   });
 
@@ -178,5 +193,78 @@ describe("live site commands (network)", () => {
     const { exitCode, result } = await runCommand(["status", "--site", SITE]);
     assert.equal(exitCode, 0);
     assert.ok(result.siteUrl.includes("cheshireterminal.ai"));
+  });
+
+  it("agents:list returns catalog ids from live browser-agents", async () => {
+    const result = await cmdAgents({ siteUrl: SITE, list: true });
+    assert.ok(result.count > 0);
+    assert.ok(Array.isArray(result.identifiers));
+    assert.ok(result.identifiers.length > 0);
+    assert.match(result.hub, /\/agents$/);
+  });
+
+  it("register:agent --id dry-run uses catalog agent", async () => {
+    const list = await cmdAgents({ siteUrl: SITE, list: true });
+    const id = list.identifiers?.[0];
+    assert.ok(id, "need at least one catalog agent");
+    const result = await cmdRegisterAgent({
+      siteUrl: SITE,
+      id,
+      confirm: false,
+    });
+    assert.equal(result.mode, "dry-run");
+    assert.equal(result.source, "browser-agents");
+    assert.ok(result.payload?.name);
+    assert.match(result.frontend?.registry || "", /agent-registry/);
+  });
+
+  it("register:all dry-run covers catalog slice", async () => {
+    const result = await cmdRegisterAll({
+      siteUrl: SITE,
+      confirm: false,
+      limit: 3,
+    });
+    assert.equal(result.mode, "dry-run");
+    assert.equal(result.attempted, 3);
+    assert.equal(result.succeeded, 3);
+  });
+
+  it("sync reports skills + agents + registry hubs", async () => {
+    const result = await cmdSync({ siteUrl: SITE });
+    assert.ok(result.skills?.count > 0 || result.agents?.count > 0);
+    assert.match(result.hubs?.skills || "", /\/skills/);
+    assert.match(result.hubs?.agents || "", /\/agents/);
+    assert.match(result.hubs?.registry || "", /agent-registry/);
+    assert.ok(result.sourceOfTruth?.hubUi);
+  });
+});
+
+describe("catalog helpers", () => {
+  it("toRegistryName and hubLinks", () => {
+    assert.equal(toRegistryName("Air Drop Hunter!"), "air-drop-hunter");
+    const hubs = hubLinks("https://cheshireterminal.ai");
+    assert.equal(hubs.cli, "https://cheshireterminal.ai/cli");
+    assert.equal(hubs.gateway, "https://cheshireterminal.ai/gateway");
+    assert.equal(hubs.agents, "https://cheshireterminal.ai/agents");
+  });
+
+  it("normalizeBrowserAgents + register body", () => {
+    const n = normalizeBrowserAgents({
+      count: 1,
+      agents: [
+        {
+          id: "airdrop-hunter",
+          title: "DeFi Airdrop Hunter",
+          description: "Hunt airdrops",
+          category: "trading",
+          tags: ["airdrop"],
+        },
+      ],
+    });
+    assert.equal(n.count, 1);
+    assert.equal(n.agents[0].registryName, "airdrop-hunter");
+    const body = catalogAgentToRegisterBody(n.agents[0]);
+    assert.equal(body.name, "airdrop-hunter");
+    assert.match(body.title, /Airdrop/);
   });
 });

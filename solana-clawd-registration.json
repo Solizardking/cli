@@ -23,6 +23,11 @@
       "name": "api",
       "endpoint": "https://cheshireterminal.ai/api",
       "version": "1.0"
+    },
+    {
+      "name": "gateway",
+      "endpoint": "https://cheshireterminal.ai/gateway",
+      "version": "1.0"
     }
   ],
   "active": true,

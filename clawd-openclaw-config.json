@@ -16,6 +16,11 @@
       "description": "REST API for skills, agents, auth, registry"
     },
     {
+      "name": "gateway",
+      "endpoint": "https://cheshireterminal.ai/gateway",
+      "description": "Developer gateway portal and /api/gateway/* API surface"
+    },
+    {
       "name": "marketplace",
       "endpoint": "https://cheshireterminal.ai/api/skills",
       "description": "Skills catalog"

@@ -11,8 +11,13 @@ import { constants as fsConstants } from "node:fs";
 export const DEFAULT_SITE_URL = "https://cheshireterminal.ai";
 export const CLI_NAME = "cheshire-cli";
 export const CLI_BRAND = "Cheshire Terminal";
+/** npm package name when published */
+export const CLI_PACKAGE_NAME = "cheshire-terminal-cli";
+export const CLI_HUB_URL = "https://cheshireterminal.ai/cli";
+export const CLI_GATEWAY_URL = "https://cheshireterminal.ai/gateway";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+/** Package root (works for monorepo `cli/` and npm global install). */
 export const CLI_ROOT = join(__dirname, "..");
 
 /**
