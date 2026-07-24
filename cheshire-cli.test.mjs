@@ -127,7 +127,30 @@ describe("CLI process entry", () => {
     assert.equal(proc.status, 0, proc.stderr);
     assert.match(proc.stdout, /Cheshire Terminal/);
     assert.match(proc.stdout, /cheshireterminal\.ai/);
+    assert.match(proc.stdout, /\/cli|install\.sh/);
     assert.doesNotMatch(proc.stdout, /solanaclawd\.com/);
+  });
+
+  it("cheshire-cli.mjs connect reports hub at cheshireterminal.ai/cli", () => {
+    const proc = spawnSync(process.execPath, [CLI, "connect"], {
+      encoding: "utf8",
+      env: { ...process.env, CHESHIRE_SITE_URL: "https://cheshireterminal.ai" },
+    });
+    assert.equal(proc.status, 0, proc.stderr);
+    assert.match(proc.stdout, /cheshireterminal\.ai/);
+    assert.match(proc.stdout, /"cliHub":\s*"https:\/\/cheshireterminal\.ai\/cli"/);
+    assert.match(proc.stdout, /"cli":\s*"https:\/\/cheshireterminal\.ai\/cli"/);
+    assert.doesNotMatch(proc.stdout, /solanaclawd\.com/);
+  });
+});
+
+describe("offline connect command", () => {
+  it("cmdConnect defaults site and cliHub to cheshireterminal.ai/cli", async () => {
+    const result = await cmdConnect({ siteUrl: "https://cheshireterminal.ai" });
+    assert.equal(result.siteUrl, "https://cheshireterminal.ai");
+    assert.equal(result.endpoints.cliHub, "https://cheshireterminal.ai/cli");
+    assert.equal(result.hubs.cli, "https://cheshireterminal.ai/cli");
+    assert.equal(result.npm?.hub, "https://cheshireterminal.ai/cli");
   });
 });
 
