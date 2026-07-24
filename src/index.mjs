@@ -32,6 +32,7 @@ export {
   cmdRegisterAll,
   cmdConnect,
   cmdForgePrepare,
+  cmdPin,
   runCommand,
 } from "./commands.mjs";
 export {

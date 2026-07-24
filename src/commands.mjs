@@ -41,8 +41,15 @@ Install:
 
 Environment:
   CHESHIRE_SITE_URL     Site origin (default: ${DEFAULT_SITE_URL})
-  CHESHIRE_API_KEY      Developer API key (ct_sk_…) — mint at ${CLI_GATEWAY_URL}
+  CHESHIRE_API_KEY      Holder developer key (ct_sk_…) — mint at ${CLI_GATEWAY_URL} /api-keys
   CHESHIRE_CREDENTIALS_PATH  Optional credentials JSON path
+
+Credential families (exclusive — do not mix):
+  ct_sk_   $CLAWD holder developer API key (site APIs, MCP, CLI whoami)
+           mint: holder SIWS → POST /api/developer/keys
+  ct_os_   Oneshot terminal claim (curl install → computer/agent exclusive)
+           mint: curl -fsSL ${DEFAULT_SITE_URL}/api/e2b/install.sh | bash
+           docs: ${DEFAULT_SITE_URL}/api/developer/credential-types
 
 Discovery (synced to site UI):
   help | status | connect | sync
@@ -61,6 +68,19 @@ Agent registration (appears on /agent-registry frontend):
   register:agent --file reg.json [--confirm]
   register:all [--dry-run|--confirm] [--limit N]   # every browser-catalog agent
   forge:prepare [--file reg.json]                  # dual-rail via cheshire-terminal-agents
+
+Design TUI (fork any catalog agent — same as /agents/builder):
+  npx cheshire-terminal-agents                     # interactive design desk
+  npx cheshire-terminal-agents design --list
+  npx cheshire-terminal-agents design --from <id> --id my-bot --out ./my-bot.json
+  # monorepo tree: cd agents && node bin/ct-agents.js design
+
+Pinata Cloud (server-side JWT; custom name + keyvalues + group):
+  pin | pin:status
+  pin:groups
+  pin:groups:create --name <group>
+  pin:file --path <file> [--name <display>] [--group <id>] [--kv key=val]
+  pin:json --file <json> | --data '<json>' [--name …] [--group …] [--kv …]
 
 Source of truth:
   Hub UI     monorepo agents/          → GET /api/clawd/browser-agents
@@ -934,6 +954,160 @@ export async function cmdForgePrepare(options = {}) {
   };
 }
 
+function parseKvFlags(kvRaw) {
+  const out = {};
+  const list = Array.isArray(kvRaw) ? kvRaw : kvRaw ? [kvRaw] : [];
+  for (const entry of list) {
+    const s = String(entry || "").trim();
+    if (!s) continue;
+    const eq = s.indexOf("=");
+    if (eq <= 0) continue;
+    out[s.slice(0, eq).trim()] = s.slice(eq + 1).trim();
+  }
+  return out;
+}
+
+/**
+ * Pinata Cloud via site /api/ipfs (PINATA_JWT stays on the server).
+ * Actions: status | groups | groups:create | file | json
+ */
+export async function cmdPin(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const action = String(options.action || "status").toLowerCase();
+  const keyvalues = {
+    source: "cheshire-cli",
+    ...parseKvFlags(options.kv),
+  };
+  const groupId = options.group || options.groupId || null;
+  const name = options.name || null;
+
+  if (action === "status" || action === "pin" || action === "") {
+    const { data } = await client.get("/api/ipfs/status");
+    return {
+      ok: true,
+      action: "status",
+      siteUrl: client.siteUrl,
+      pinata: data,
+      tips: [
+        `${CLI_NAME} pin:file --path ./agent.json --name my-agent --group <id> --kv env=prod`,
+        `${CLI_NAME} pin:json --file ./meta.json --name agent-meta --kv source=cli`,
+        `${CLI_NAME} pin:groups:create --name cheshire-agents`,
+      ],
+    };
+  }
+
+  if (action === "groups" || action === "groups:list") {
+    const { data } = await client.get("/api/ipfs/groups");
+    return {
+      ok: true,
+      action: "groups",
+      count: data?.count ?? data?.groups?.length ?? 0,
+      groups: data?.groups || [],
+    };
+  }
+
+  if (action === "groups:create" || action === "group:create") {
+    const groupName = name || options.groupName;
+    if (!groupName) {
+      return { ok: false, error: "pin:groups:create requires --name <group>" };
+    }
+    const { data } = await client.post("/api/ipfs/groups", { name: groupName });
+    return { ok: true, action: "groups:create", group: data?.group || data };
+  }
+
+  if (action === "file" || action === "upload") {
+    const path = options.path || options.file;
+    if (!path) {
+      return { ok: false, error: "pin:file requires --path <file>" };
+    }
+    const { readFile: rf } = await import("node:fs/promises");
+    const { basename } = await import("node:path");
+    const bytes = await rf(path);
+    const filename = basename(path);
+    const displayName = name || filename;
+
+    // Multipart via undici/native FormData + Blob (Node 18+)
+    const form = new FormData();
+    form.append("file", new Blob([bytes]), filename);
+    form.append("name", displayName);
+    if (groupId) form.append("group_id", groupId);
+    form.append("keyvalues", JSON.stringify(keyvalues));
+
+    const url = `${client.siteUrl}/api/ipfs/upload`;
+    const key = options.apiKey || (await resolveApiKey());
+    const headers = {
+      Accept: "application/json",
+      "User-Agent": "cheshire-terminal-cli/1.0",
+      ...(key
+        ? { Authorization: `Bearer ${key}`, "x-api-key": key }
+        : {}),
+    };
+    const res = await fetch(url, { method: "POST", headers, body: form });
+    const text = await res.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { raw: text.slice(0, 500) };
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        action: "file",
+        error: data?.error || res.statusText,
+        status: res.status,
+        body: data,
+      };
+    }
+    return {
+      ok: true,
+      action: "file",
+      path,
+      name: displayName,
+      groupId: groupId || data?.groupId || null,
+      keyvalues,
+      ...data,
+    };
+  }
+
+  if (action === "json") {
+    let content = null;
+    if (options.data) {
+      try {
+        content = JSON.parse(String(options.data));
+      } catch {
+        return { ok: false, error: "--data must be valid JSON" };
+      }
+    } else {
+      const path = options.path || options.file;
+      if (!path) {
+        return { ok: false, error: "pin:json requires --file <json> or --data '<json>'" };
+      }
+      content = JSON.parse(await readFile(path, "utf8"));
+    }
+    const { data } = await client.post("/api/ipfs/json", {
+      content,
+      name: name || "cheshire-cli-json",
+      group_id: groupId || undefined,
+      keyvalues,
+    });
+    return {
+      ok: true,
+      action: "json",
+      name: name || "cheshire-cli-json",
+      groupId: groupId || data?.groupId || null,
+      keyvalues,
+      ...data,
+    };
+  }
+
+  return {
+    ok: false,
+    error: `Unknown pin action: ${action}`,
+    usage: "pin | pin:status | pin:groups | pin:groups:create | pin:file | pin:json",
+  };
+}
+
 /**
  * Dispatch a CLI command. Returns { exitCode, result }.
  */
@@ -962,6 +1136,21 @@ export async function runCommand(argv) {
     confirm: Boolean(flags.confirm),
     force: Boolean(flags.force),
     key: flags.key,
+    path: flags.path,
+    group: flags.group || flags["group-id"] || flags.groupId,
+    kv: (() => {
+      // Support repeated --kv and comma-separated values
+      const raw = [];
+      for (let i = 0; i < rest.length; i += 1) {
+        if (rest[i] === "--kv" && rest[i + 1]) {
+          raw.push(rest[i + 1]);
+          i += 1;
+        }
+      }
+      if (flags.kv) raw.push(flags.kv);
+      return raw;
+    })(),
+    data: flags.data,
     command,
   };
 
@@ -1045,6 +1234,38 @@ export async function runCommand(argv) {
       case "forge:prepare":
       case "forge-prepare":
         result = await cmdForgePrepare(opts);
+        break;
+      case "pin":
+      case "pin:status":
+        result = await cmdPin({ ...opts, action: "status" });
+        break;
+      case "pin:groups":
+      case "pin:groups:list":
+        result = await cmdPin({ ...opts, action: "groups" });
+        break;
+      case "pin:groups:create":
+      case "pin:group:create":
+        result = await cmdPin({
+          ...opts,
+          action: "groups:create",
+          name: flags.name || positionals[0],
+        });
+        break;
+      case "pin:file":
+      case "pin:upload":
+        result = await cmdPin({
+          ...opts,
+          action: "file",
+          path: flags.path || flags.file || positionals[0],
+        });
+        break;
+      case "pin:json":
+        result = await cmdPin({
+          ...opts,
+          action: "json",
+          path: flags.path || flags.file || positionals[0],
+          data: flags.data,
+        });
         break;
       default:
         return {
