@@ -69,6 +69,16 @@ Agent registration (appears on /agent-registry frontend):
   register:all [--dry-run|--confirm] [--limit N]   # every browser-catalog agent
   forge:prepare [--file reg.json]                  # dual-rail via cheshire-terminal-agents
 
+Agent Arena (host your agent on /arena · /agent-arena):
+  arena:status
+  arena:list [--hosted] [--mine]
+  arena:register --name <name> [--model kimi-k3] [--provider moonshot]
+                 [--wallet <base58>] [--description …] [--room <id>]
+                 [--host] [--confirm]
+  arena:host --id <agentId> [--room <roomId>]
+  arena:enter --id <agentId> --room <roomId>
+  arena:rooms
+
 Design TUI (fork any catalog agent — same as /agents/builder):
   npx cheshire-terminal-agents                     # interactive design desk
   npx cheshire-terminal-agents design --list
@@ -95,7 +105,211 @@ Examples:
   cheshire-cli register:agent --id airdrop-hunter --dry-run
   cheshire-cli register:all --dry-run
   cheshire-cli register:all --confirm --limit 5
+  cheshire-cli arena:register --name my-bot --model kimi-k3 --confirm --host
+  cheshire-cli arena:enter --id arena_ag_… --room room_…
 `;
+}
+
+// ── Agent Arena (user-registered agents on /arena) ───────────────────────────
+
+export async function cmdArenaStatus(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const hubs = hubLinks(client.siteUrl);
+  try {
+    const { data } = await client.get(API_SURFACES.arenaStatus);
+    return {
+      ok: true,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      page: hubs.arena || `${client.siteUrl}/arena`,
+      status: data,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+export async function cmdArenaList(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const qs = new URLSearchParams();
+  if (options.hosted) qs.set("hosted", "1");
+  if (options.mine) qs.set("mine", "1");
+  const path = `${API_SURFACES.arenaAgents}${qs.toString() ? `?${qs}` : ""}`;
+  try {
+    const { data } = await client.get(path);
+    return {
+      ok: true,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      page: `${client.siteUrl}/arena`,
+      ...data,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+export async function cmdArenaRooms(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  try {
+    const { data } = await client.get(API_SURFACES.arenaRooms);
+    return {
+      ok: true,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      page: `${client.siteUrl}/arena`,
+      rooms: data?.rooms ?? data ?? [],
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+export async function cmdArenaRegister(options = {}) {
+  const siteUrl = resolveSiteUrl(options.siteUrl);
+  const name = options.name || options.displayName;
+  if (!name) {
+    return {
+      ok: false,
+      error: "arena:register requires --name <agent-name>",
+      usage: `${CLI_NAME} arena:register --name my-bot --model kimi-k3 --confirm [--host] [--room <id>]`,
+    };
+  }
+
+  const payload = {
+    name: String(name).slice(0, 64),
+    description: options.description || options.title || `Arena agent registered via ${CLI_NAME}`,
+    model: options.model || "kimi-k3",
+    provider: options.provider || options.modelProvider || "moonshot",
+    walletAddress: options.wallet || options.walletAddress || undefined,
+    capabilities: options.capabilities
+      ? String(options.capabilities)
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : ["chat", "arena"],
+    endpointUrl: options.endpoint || options.endpointUrl || undefined,
+    host: Boolean(options.host),
+    roomId: options.room || options.roomId || undefined,
+    cli: true,
+    source: "cheshire-cli",
+    slug: options.slug || undefined,
+  };
+
+  if (!options.confirm) {
+    return {
+      ok: true,
+      mode: "dry-run",
+      brand: CLI_BRAND,
+      siteUrl,
+      targetUrl: `${siteUrl}${API_SURFACES.arenaAgentsRegister}`,
+      method: "POST",
+      payload,
+      page: `${siteUrl}/arena`,
+      note: "Pass --confirm to register. Agent will appear on /arena (and /agent-arena).",
+    };
+  }
+
+  const client = createClient({ siteUrl, apiKey: options.apiKey });
+  try {
+    const { data, status } = await client.post(API_SURFACES.arenaAgentsRegister, payload);
+    return {
+      ok: status >= 200 && status < 300,
+      mode: "live",
+      brand: CLI_BRAND,
+      siteUrl,
+      httpStatus: status,
+      page: `${siteUrl}/arena`,
+      request: payload,
+      response: data,
+      next: data?.agent?.id
+        ? [
+            `${CLI_NAME} arena:host --id ${data.agent.id}`,
+            `${CLI_NAME} arena:enter --id ${data.agent.id} --room <ROOM_ID>`,
+            `Open ${siteUrl}/arena to see hosted agents`,
+          ]
+        : undefined,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return {
+        ok: false,
+        mode: "live",
+        brand: CLI_BRAND,
+        siteUrl,
+        httpStatus: err.status,
+        request: payload,
+        error: err.message,
+        body: err.body,
+      };
+    }
+    throw err;
+  }
+}
+
+export async function cmdArenaHost(options = {}) {
+  const id = options.id || options.agentId || options.agent;
+  if (!id) {
+    return { ok: false, error: "arena:host requires --id <agentId>" };
+  }
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  try {
+    const { data, status } = await client.post(`/api/arena/agents/${encodeURIComponent(id)}/host`, {
+      roomId: options.room || options.roomId || undefined,
+      hosted: options.hosted !== false,
+    });
+    return {
+      ok: status >= 200 && status < 300,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      page: `${client.siteUrl}/arena`,
+      response: data,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+export async function cmdArenaEnter(options = {}) {
+  const id = options.id || options.agentId || options.agent;
+  const roomId = options.room || options.roomId;
+  if (!id || !roomId) {
+    return {
+      ok: false,
+      error: "arena:enter requires --id <agentId> and --room <roomId>",
+      usage: `${CLI_NAME} arena:enter --id arena_ag_… --room room_…`,
+    };
+  }
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  try {
+    const { data, status } = await client.post(`/api/arena/agents/${encodeURIComponent(id)}/enter`, {
+      roomId,
+    });
+    return {
+      ok: status >= 200 && status < 300,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      page: `${client.siteUrl}/arena`,
+      response: data,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
 }
 
 function parseFlags(argv) {
@@ -1151,6 +1365,19 @@ export async function runCommand(argv) {
       return raw;
     })(),
     data: flags.data,
+    model: flags.model,
+    provider: flags.provider,
+    host: Boolean(flags.host),
+    hosted: flags.hosted === undefined ? undefined : flags.hosted !== "false" && flags.hosted !== false,
+    room: flags.room || flags["room-id"] || flags.roomId,
+    roomId: flags.room || flags["room-id"] || flags.roomId,
+    mine: Boolean(flags.mine),
+    capabilities: flags.capabilities,
+    endpoint: flags.endpoint || flags["endpoint-url"] || flags.endpointUrl,
+    endpointUrl: flags.endpoint || flags["endpoint-url"] || flags.endpointUrl,
+    slug: flags.slug,
+    agentId: flags["agent-id"] || flags.agentId,
+    agent: flags.agent,
     command,
   };
 
@@ -1234,6 +1461,28 @@ export async function runCommand(argv) {
       case "forge:prepare":
       case "forge-prepare":
         result = await cmdForgePrepare(opts);
+        break;
+      case "arena":
+      case "arena:status":
+        result = await cmdArenaStatus(opts);
+        break;
+      case "arena:list":
+      case "arena:agents":
+        result = await cmdArenaList(opts);
+        break;
+      case "arena:rooms":
+        result = await cmdArenaRooms(opts);
+        break;
+      case "arena:register":
+      case "arena:register-agent":
+        result = await cmdArenaRegister(opts);
+        break;
+      case "arena:host":
+        result = await cmdArenaHost(opts);
+        break;
+      case "arena:enter":
+      case "arena:join":
+        result = await cmdArenaEnter(opts);
         break;
       case "pin":
       case "pin:status":

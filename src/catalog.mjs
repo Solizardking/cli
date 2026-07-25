@@ -29,6 +29,9 @@ export const SITE_SURFACES = {
   agentRegistry: "/agent-registry",
   registry: "/registry",
   agentsRegistry: "/agents/registry",
+  /** Multi-agent chat + user-registered agents host page */
+  arena: "/arena",
+  agentArena: "/agent-arena",
 };
 
 export const API_SURFACES = {
@@ -43,6 +46,10 @@ export const API_SURFACES = {
   developerStatus: "/api/developer/status",
   gatewayStatus: "/api/gateway/status",
   metaplexHealth: "/api/metaplex-agents/health",
+  arenaStatus: "/api/arena/status",
+  arenaRooms: "/api/arena/rooms",
+  arenaAgents: "/api/arena/agents",
+  arenaAgentsRegister: "/api/arena/agents/register",
 };
 
 /** DNS-label slug for ar.dev Agent metadata.name */
@@ -182,6 +189,8 @@ export function hubLinks(siteUrl) {
     agents: `${base}${SITE_SURFACES.agents}`,
     forge: `${base}${SITE_SURFACES.agentsForge}`,
     registry: `${base}${SITE_SURFACES.agentRegistry}`,
+    arena: `${base}${SITE_SURFACES.arena}`,
+    agentArena: `${base}${SITE_SURFACES.agentArena}`,
     registryAliases: [
       `${base}${SITE_SURFACES.registry}`,
       `${base}${SITE_SURFACES.agentsRegistry}`,
@@ -192,6 +201,9 @@ export function hubLinks(siteUrl) {
       registryStatus: `${base}${API_SURFACES.registryStatus}`,
       registryAgents: `${base}${API_SURFACES.registryAgents}`,
       register: `${base}${API_SURFACES.registryRegister}`,
+      arenaStatus: `${base}${API_SURFACES.arenaStatus}`,
+      arenaAgents: `${base}${API_SURFACES.arenaAgents}`,
+      arenaRegister: `${base}${API_SURFACES.arenaAgentsRegister}`,
     },
   };
 }
