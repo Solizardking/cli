@@ -1,7 +1,7 @@
 {
   "name": "cheshire-terminal-cli",
   "version": "1.1.0",
-  "description": "Terminal into the clawd. Official Cheshire Terminal CLI — sync /skills /agents /agent-registry, SIWS auth, register every catalog agent to the frontend. Hub: https://cheshireterminal.ai/cli · gateway: https://cheshireterminal.ai/gateway",
+  "description": "Open-source Cheshire Terminal CLI — public status/skills/agents, optional SIWS and developer API keys, agent registry, arena. Hub: https://cheshireterminal.ai/cli",
   "type": "module",
   "license": "MIT",
   "author": "Cheshire Terminal <operators@cheshireterminal.ai>",
@@ -10,12 +10,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Solizardking/cheshire-terminal.git",
-    "directory": "cli"
+    "url": "git+https://github.com/Solizardking/cli.git"
   },
   "homepage": "https://cheshireterminal.ai/cli",
   "bugs": {
-    "url": "https://github.com/Solizardking/cheshire-terminal/issues"
+    "url": "https://github.com/Solizardking/cli/issues"
   },
   "keywords": [
     "cheshire-terminal",
@@ -72,7 +71,7 @@
     "help": "node ./bin/cheshire-cli.js help",
     "status": "node ./bin/cheshire-cli.js status",
     "sync": "node ./bin/cheshire-cli.js sync",
-    "test": "node --test ./cheshire-cli.test.mjs",
+    "test": "node --test ./cheshire-cli.test.mjs ./arena-register.test.mjs",
     "prepack": "node --check bin/cheshire-cli.js && node --check cheshire-cli.mjs && node --check src/config.mjs && node --check src/client.mjs && node --check src/catalog.mjs && node --check src/commands.mjs && node --check src/index.mjs",
     "prepublishOnly": "npm test"
   },

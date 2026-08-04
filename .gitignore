@@ -1,3 +1,36 @@
-*.tgz
+# Dependencies & packaging
 node_modules/
+*.tgz
+package-lock.json
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
 
+# Local credentials & secrets (never commit)
+.env
+.env.*
+!.env.example
+credentials.json
+*.pem
+*.key
+id.json
+keypair.json
+*-keypair.json
+wallet.json
+
+# Cheshire CLI local state
+.cheshire/
+cli-env.sh
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Test / coverage noise
+coverage/
+.nyc_output/
+*.log

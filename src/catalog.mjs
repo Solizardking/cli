@@ -1,20 +1,15 @@
 /**
- * Catalog sync between Cheshire CLI and site surfaces.
+ * Catalog sync between Cheshire CLI and public site surfaces.
  *
- * Source of truth (do not dual-wire filesystem trees):
- * ┌────────────────────────────┬──────────────────────────────────────────────┐
- * │ Surface                    │ Source                                       │
- * ├────────────────────────────┼──────────────────────────────────────────────┤
- * │ /agents hub UI             │ monorepo agents/ → GET /api/clawd/browser-agents │
- * │ /skills                    │ monorepo skills + robinhood-agents/skills → GET /api/skills │
- * │ /agent-registry · /registry│ registry.cheshireterminal.ai via /api/agent-registry │
- * │ Dual-rail forge / npm pack │ monorepo robinhood-agents = cheshire-terminal-agents │
- * │ Upstream publish repo      │ github.com/solizardking/agents (npm source)  │
- * └────────────────────────────┴──────────────────────────────────────────────┘
+ * Runtime always uses the live site (CHESHIRE_SITE_URL). No local source tree
+ * is required. Optional peer `cheshire-terminal-agents` unlocks forge prepare.
  *
- * Runtime CLI always uses the live site (CHESHIRE_SITE_URL). Optional peer
- * package `cheshire-terminal-agents` unlocks local forge prepare — not required
- * for hub list/register/sync.
+ * │ Surface                    │ Public source                                │
+ * │ /agents                    │ GET /api/clawd/browser-agents                │
+ * │ /skills                    │ GET /api/skills                              │
+ * │ /agent-registry            │ registry.cheshireterminal.ai via /api/agent-registry │
+ * │ Dual-rail forge (optional) │ npm cheshire-terminal-agents                 │
+ * │ Agents catalog OSS         │ github.com/solizardking/agents               │
  */
 
 export const SITE_SURFACES = {

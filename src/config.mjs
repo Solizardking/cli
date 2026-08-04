@@ -17,7 +17,7 @@ export const CLI_HUB_URL = "https://cheshireterminal.ai/cli";
 export const CLI_GATEWAY_URL = "https://cheshireterminal.ai/gateway";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-/** Package root (works for monorepo `cli/` and npm global install). */
+/** Package root (npm package install or local clone). */
 export const CLI_ROOT = join(__dirname, "..");
 
 /**

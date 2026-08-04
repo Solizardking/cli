@@ -1,6 +1,6 @@
 /**
- * In-repo tests for Cheshire Terminal CLI — drives shipped modules.
- * Run: node --test cli/cheshire-cli.test.mjs
+ * Package tests for Cheshire Terminal CLI — drives shipped modules.
+ * Run: npm test   (or: node --test ./cheshire-cli.test.mjs ./arena-register.test.mjs)
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -111,6 +111,23 @@ describe("usage / help", () => {
     assert.doesNotMatch(text, /solanaclawd\.com/);
   });
 
+  it("usage text is open-source public posture (no holder/sandbox funnel)", () => {
+    const text = usageText();
+    assert.match(text, /Open-source CLI/);
+    assert.match(text, /status/);
+    assert.match(text, /skills/);
+    assert.match(text, /register:user|SIWS/);
+    assert.match(text, /https:\/\/cheshireterminal\.ai/);
+    // Scrubbed premium / exclusive / sandbox marketing
+    assert.doesNotMatch(text, /holder-gated/i);
+    assert.doesNotMatch(text, /\$CLAWD holder developer/i);
+    assert.doesNotMatch(text, /ct_os_/);
+    assert.doesNotMatch(text, /\/api\/e2b\/install\.sh/);
+    assert.doesNotMatch(text, /Oneshot terminal claim/i);
+    assert.doesNotMatch(text, /exclusive/i);
+    assert.doesNotMatch(text, /monorepo tree/i);
+  });
+
   it("runCommand help returns usage", async () => {
     const { exitCode, text, result } = await runCommand(["help"]);
     assert.equal(exitCode, 0);
@@ -129,6 +146,10 @@ describe("CLI process entry", () => {
     assert.match(proc.stdout, /cheshireterminal\.ai/);
     assert.match(proc.stdout, /\/cli|install\.sh/);
     assert.doesNotMatch(proc.stdout, /solanaclawd\.com/);
+    assert.doesNotMatch(proc.stdout, /ct_os_/);
+    assert.doesNotMatch(proc.stdout, /\/api\/e2b\/install\.sh/);
+    assert.doesNotMatch(proc.stdout, /holder-gated/i);
+    assert.doesNotMatch(proc.stdout, /exclusive/i);
   });
 
   it("cheshire-cli.mjs connect reports hub at cheshireterminal.ai/cli", () => {
@@ -291,3 +312,54 @@ describe("catalog helpers", () => {
     assert.match(body.title, /Airdrop/);
   });
 });
+
+describe("open-source package cleanliness", () => {
+  it("tracked package files have no full secrets", async () => {
+    const { readdir, readFile, stat } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const secretRes = [
+      /ct_sk_[A-Za-z0-9]{16,}/,
+      /sk_live_[A-Za-z0-9]{10,}/,
+      /BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY/,
+      /PRIVATE_KEY\s*=\s*['"]?[A-Za-z0-9+/=]{20,}/i,
+    ];
+    const skip = new Set([".git", "node_modules"]);
+    async function walk(dir, out = []) {
+      for (const name of await readdir(dir)) {
+        if (skip.has(name) || name.startsWith(".")) continue;
+        const full = join(dir, name);
+        const st = await stat(full);
+        if (st.isDirectory()) await walk(full, out);
+        else if (/\.(mjs|js|ts|json|md|sh|svg)$/i.test(name) || name === "LICENSE" || name === ".gitignore") {
+          out.push(full);
+        }
+      }
+      return out;
+    }
+    const files = await walk(__dirname);
+    const hits = [];
+    for (const file of files) {
+      const body = await readFile(file, "utf8");
+      for (const re of secretRes) {
+        if (re.test(body)) hits.push(`${file}: ${re}`);
+      }
+    }
+    assert.deepEqual(hits, [], `secret-like material: ${hits.join("; ")}`);
+  });
+
+  it("README is standalone OSS without premium sandbox funnel", async () => {
+    const raw = await readFile(join(__dirname, "README.md"), "utf8");
+    assert.match(raw, /Open-source CLI|open-source/i);
+    assert.match(raw, /npm i -g cheshire-terminal-cli|npm i -g cheshire-terminal-cli/);
+    assert.match(raw, /\/api\/cli\/install\.sh/);
+    assert.match(raw, /MIT/);
+    assert.doesNotMatch(raw, /holder-gated/i);
+    assert.doesNotMatch(raw, /holder mint/i);
+    assert.doesNotMatch(raw, /ct_os_/);
+    assert.doesNotMatch(raw, /\/api\/e2b\/install\.sh/);
+    assert.doesNotMatch(raw, /From this monorepo/);
+    assert.doesNotMatch(raw, /pnpm test:cli/);
+    assert.doesNotMatch(raw, /server\/routes\/cli\.test/);
+  });
+});
+

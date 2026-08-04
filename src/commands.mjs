@@ -28,7 +28,7 @@ import {
 
 export function usageText() {
   return `${CLI_BRAND} CLI (${CLI_NAME})
-Terminal into the clawd.
+Open-source CLI for Cheshire Terminal public APIs.
 npm: ${CLI_PACKAGE_NAME} · hub: ${CLI_HUB_URL} · gateway: ${CLI_GATEWAY_URL}
 
 Usage:
@@ -40,18 +40,16 @@ Install:
   # or: curl -fsSL ${DEFAULT_SITE_URL}/api/cli/install.sh | bash
 
 Environment:
-  CHESHIRE_SITE_URL     Site origin (default: ${DEFAULT_SITE_URL})
-  CHESHIRE_API_KEY      Holder developer key (ct_sk_…) — mint at ${CLI_GATEWAY_URL} /api-keys
+  CHESHIRE_SITE_URL          Site origin (default: ${DEFAULT_SITE_URL})
+  CHESHIRE_API_KEY           Optional developer API key (ct_sk_…) for authenticated calls
   CHESHIRE_CREDENTIALS_PATH  Optional credentials JSON path
 
-Credential families (exclusive — do not mix):
-  ct_sk_   $CLAWD holder developer API key (site APIs, MCP, CLI whoami)
-           mint: holder SIWS → POST /api/developer/keys
-  ct_os_   Oneshot terminal claim (curl install → computer/agent exclusive)
-           mint: curl -fsSL ${DEFAULT_SITE_URL}/api/e2b/install.sh | bash
-           docs: ${DEFAULT_SITE_URL}/api/developer/credential-types
+Auth (optional — never paste private keys into the CLI):
+  SIWS     register:user → sign challenge in your wallet → login
+  API key  set-key --api-key ct_sk_…  or  export CHESHIRE_API_KEY=ct_sk_…
+           Create keys at ${CLI_GATEWAY_URL} when the site requires them
 
-Discovery (synced to site UI):
+Discovery (public site surfaces):
   help | status | connect | sync
   skills [query] | skills:search <q>       → /skills · /api/skills
   agents | agents:list | agents:show --id  → /agents · /api/clawd/browser-agents
@@ -62,14 +60,14 @@ User registration / auth:
   login --wallet <pk> --signature <sig> --message <msg>
   whoami | set-key --api-key ct_sk_…
 
-Agent registration (appears on /agent-registry frontend):
+Agent registration (public catalog → /agent-registry):
   register:agent --id <catalog-id> [--dry-run|--confirm]
   register:agent --name <slug> [--title …] [--description …] [--confirm]
   register:agent --file reg.json [--confirm]
-  register:all [--dry-run|--confirm] [--limit N]   # every browser-catalog agent
-  forge:prepare [--file reg.json]                  # dual-rail via cheshire-terminal-agents
+  register:all [--dry-run|--confirm] [--limit N]
+  forge:prepare [--file reg.json]          # hints for optional cheshire-terminal-agents
 
-Agent Arena (host your agent on /arena · /agent-arena):
+Agent Arena (rooms + hosted agents on /arena):
   arena:status
   arena:list [--hosted] [--mine]
   arena:register --name <name> [--model kimi-k3] [--provider moonshot]
@@ -79,32 +77,31 @@ Agent Arena (host your agent on /arena · /agent-arena):
   arena:enter --id <agentId> --room <roomId>
   arena:rooms
 
-Design TUI (fork any catalog agent — same as /agents/builder):
-  npx cheshire-terminal-agents                     # interactive design desk
+Optional dual-rail forge package (separate npm):
+  npx cheshire-terminal-agents
   npx cheshire-terminal-agents design --list
   npx cheshire-terminal-agents design --from <id> --id my-bot --out ./my-bot.json
-  # monorepo tree: cd agents && node bin/ct-agents.js design
 
-Pinata Cloud (server-side JWT; custom name + keyvalues + group):
+IPFS pin helpers (when Pinata is configured server-side):
   pin | pin:status
   pin:groups
   pin:groups:create --name <group>
   pin:file --path <file> [--name <display>] [--group <id>] [--kv key=val]
   pin:json --file <json> | --data '<json>' [--name …] [--group …] [--kv …]
 
-Source of truth:
-  Hub UI     monorepo agents/          → GET /api/clawd/browser-agents
-  Skills     skills + robinhood-agents → GET /api/skills
-  Registry   registry.cheshireterminal.ai via /api/agent-registry
-  Forge npm  robinhood-agents package  = cheshire-terminal-agents
-  Upstream   github.com/solizardking/agents (publish repo; do not dual-wire)
+Public surfaces (runtime uses live HTTP — no local tree required):
+  Agents     GET /api/clawd/browser-agents → /agents
+  Skills     GET /api/skills → /skills
+  Registry   GET /api/agent-registry → /agent-registry
+  Forge npm  cheshire-terminal-agents (optional peer)
+  Agents OSS github.com/solizardking/agents
 
 Examples:
+  cheshire-cli status
   cheshire-cli sync
   cheshire-cli agents:list
   cheshire-cli register:agent --id airdrop-hunter --dry-run
   cheshire-cli register:all --dry-run
-  cheshire-cli register:all --confirm --limit 5
   cheshire-cli arena:register --name my-bot --model kimi-k3 --confirm --host
   cheshire-cli arena:enter --id arena_ag_… --room room_…
 `;
@@ -736,10 +733,10 @@ export async function cmdSync(options = {}) {
     status: developer?.status ?? null,
   };
   report.sourceOfTruth = {
-    hubUi: "monorepo agents/ → /api/clawd/browser-agents",
-    skills: "skills + robinhood-agents/skills → /api/skills",
+    hubUi: "GET /api/clawd/browser-agents → /agents",
+    skills: "GET /api/skills → /skills",
     registry: "registry.cheshireterminal.ai via /api/agent-registry",
-    forgePackage: "cheshire-terminal-agents (monorepo robinhood-agents)",
+    forgePackage: "npm cheshire-terminal-agents (optional)",
     upstreamPublish: "github.com/solizardking/agents",
   };
   report.next = [
@@ -778,7 +775,7 @@ export async function cmdRegisterUser(options = {}) {
     nextSteps: [
       "Sign challenge.message with the wallet (ed25519 detached signature, base58).",
       `Run: ${CLI_NAME} login --wallet ${wallet} --signature <sig> --message <exact-challenge-message>`,
-      "Or set CHESHIRE_API_KEY (ct_sk_…) from the developer portal after holder login.",
+      "Or set CHESHIRE_API_KEY (ct_sk_…) for authenticated API calls when the site requires a key.",
       `${client.siteUrl}/api/developer/status documents key headers and routes.`,
     ],
     verifyPath: "/api/auth/verify",
@@ -827,7 +824,7 @@ export async function cmdLogin(options = {}) {
     ok: data?.ok !== false && status < 400,
     result: data,
     note:
-      "Wallet session may be cookie-based. For headless CLI auth prefer CHESHIRE_API_KEY (holder-gated keys at /api/developer/keys).",
+      "Wallet session may be cookie-based. For headless CLI auth prefer CHESHIRE_API_KEY (optional developer key at /api/developer/keys).",
   };
 }
 
@@ -1074,11 +1071,11 @@ export async function cmdConnect(options = {}) {
     siteUrl,
     hubs,
     sourceOfTruth: {
-      hubUi: "monorepo agents/ → /api/clawd/browser-agents → /agents",
-      skills: "skills + robinhood-agents/skills → /api/skills → /skills",
+      hubUi: "GET /api/clawd/browser-agents → /agents",
+      skills: "GET /api/skills → /skills",
       registry: "registry.cheshireterminal.ai → /api/agent-registry → /agent-registry",
-      forge: "monorepo robinhood-agents = npm cheshire-terminal-agents",
-      upstream: "github.com/solizardking/agents (publish only; do not dual-wire CLI to a second tree)",
+      forge: "npm cheshire-terminal-agents (optional peer)",
+      upstream: "github.com/solizardking/agents",
     },
     endpoints: {
       web: siteUrl,
