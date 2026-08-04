@@ -60,6 +60,12 @@ User registration / auth:
   login --wallet <pk> --signature <sig> --message <msg>
   whoami | set-key --api-key ct_sk_…
 
+Access verify (public non-holder + holder — stores receipt):
+  access --wallet <base58>                 # live tier probe (no sign)
+  access:challenge --wallet <base58>       # SIWS challenge for access verify
+  access:verify --wallet <pk> --signature <sig> --message <msg>
+  access:status --wallet <base58>          # latest stored receipt
+
 Agent registration (public catalog → /agent-registry):
   register:agent --id <catalog-id> [--dry-run|--confirm]
   register:agent --name <slug> [--title …] [--description …] [--confirm]
@@ -828,6 +834,135 @@ export async function cmdLogin(options = {}) {
   };
 }
 
+/**
+ * Live access tier probe (public | holder | admin). No signature, no storage.
+ */
+export async function cmdAccessProbe(options = {}) {
+  const wallet = options.wallet?.trim();
+  if (!wallet) {
+    return { ok: false, error: "access requires --wallet <base58-solana-pubkey>" };
+  }
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  try {
+    const { data } = await client.get(
+      `/api/auth/access?wallet=${encodeURIComponent(wallet)}`,
+    );
+    return { ok: true, brand: CLI_BRAND, siteUrl: client.siteUrl, ...data };
+  } catch (err) {
+    // Fallback to legacy verify-holder shape
+    try {
+      const { data } = await client.get(
+        `/api/auth/verify-holder?wallet=${encodeURIComponent(wallet)}`,
+      );
+      return {
+        ok: true,
+        brand: CLI_BRAND,
+        siteUrl: client.siteUrl,
+        walletAddress: wallet,
+        tier: data.isHolder ? "holder" : "public",
+        isPublic: true,
+        isHolder: Boolean(data.isHolder),
+        isAdmin: Boolean(data.isAdmin),
+        clawdBalance: data.clawdBalance,
+        holderMinimum: data.holderMinimum,
+        clawdMint: data.clawdMint,
+        source: "verify-holder-fallback",
+      };
+    } catch (err2) {
+      return {
+        ok: false,
+        error: err2 instanceof CheshireHttpError ? err2.message : String(err2),
+        status: err2 instanceof CheshireHttpError ? err2.status : undefined,
+      };
+    }
+  }
+}
+
+/** Fetch SIWS challenge for dual-tier access verify (stores after access:verify). */
+export async function cmdAccessChallenge(options = {}) {
+  const wallet = options.wallet?.trim();
+  if (!wallet) {
+    return { ok: false, error: "access:challenge requires --wallet <base58>" };
+  }
+  const client = createClient({ siteUrl: options.siteUrl });
+  try {
+    const { data } = await client.get(
+      `/api/auth/access/challenge?wallet=${encodeURIComponent(wallet)}`,
+    );
+    return {
+      ok: true,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      mode: "access-challenge",
+      wallet,
+      challenge: data,
+      nextSteps: [
+        "Sign challenge.message with the wallet (ed25519 detached, base58).",
+        `${CLI_NAME} access:verify --wallet ${wallet} --signature <sig> --message '<exact message>'`,
+        "Works for public non-holders and holders; receipt is stored server-side.",
+      ],
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+/** Submit signed access verification (public or holder). Stores receipt. */
+export async function cmdAccessVerify(options = {}) {
+  const wallet = options.wallet?.trim();
+  const signature = options.signature?.trim();
+  const message = options.message;
+  if (!wallet || !signature || !message) {
+    return {
+      ok: false,
+      error: "access:verify requires --wallet, --signature, and --message",
+    };
+  }
+  const client = createClient({ siteUrl: options.siteUrl });
+  try {
+    const { data, status } = await client.post("/api/auth/access/verify", {
+      walletAddress: wallet,
+      signature,
+      message,
+    });
+    return {
+      ok: data?.ok !== false && status < 400,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      httpStatus: status,
+      ...data,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+/** Latest stored access verification receipt. */
+export async function cmdAccessStatus(options = {}) {
+  const wallet = options.wallet?.trim();
+  if (!wallet) {
+    return { ok: false, error: "access:status requires --wallet <base58>" };
+  }
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  try {
+    const { data } = await client.get(
+      `/api/auth/access/status?wallet=${encodeURIComponent(wallet)}`,
+    );
+    return { ok: true, brand: CLI_BRAND, siteUrl: client.siteUrl, ...data };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
 export async function cmdWhoami(options = {}) {
   const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
   const creds = await loadCredentials();
@@ -1436,6 +1571,20 @@ export async function runCommand(argv) {
         break;
       case "whoami":
         result = await cmdWhoami(opts);
+        break;
+      case "access":
+      case "access:probe":
+      case "verify-access":
+        result = await cmdAccessProbe(opts);
+        break;
+      case "access:challenge":
+        result = await cmdAccessChallenge(opts);
+        break;
+      case "access:verify":
+        result = await cmdAccessVerify(opts);
+        break;
+      case "access:status":
+        result = await cmdAccessStatus(opts);
         break;
       case "set-key":
       case "login:key":

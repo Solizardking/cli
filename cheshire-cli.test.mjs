@@ -104,6 +104,14 @@ describe("buildAgentRegistryPayload", () => {
 });
 
 describe("usage / help", () => {
+  it("usage text documents dual-tier access verify", () => {
+    const text = usageText();
+    assert.match(text, /access:challenge|access --wallet/);
+    assert.match(text, /access:verify/);
+    assert.match(text, /access:status/);
+    assert.match(text, /public non-holder|public/);
+  });
+
   it("usage text is Cheshire branded without solanaclawd primary host", () => {
     const text = usageText();
     assert.match(text, /Cheshire Terminal/);
