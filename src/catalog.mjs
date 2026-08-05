@@ -27,6 +27,9 @@ export const SITE_SURFACES = {
   /** Multi-agent chat + user-registered agents host page */
   arena: "/arena",
   agentArena: "/agent-arena",
+  /** Eliza agents studio — @elizaos/cheshire-eliza */
+  elizaAgents: "/eliza-agents",
+  eliza: "/eliza-agents",
 };
 
 export const API_SURFACES = {
@@ -45,6 +48,13 @@ export const API_SURFACES = {
   arenaRooms: "/api/arena/rooms",
   arenaAgents: "/api/arena/agents",
   arenaAgentsRegister: "/api/arena/agents/register",
+  /** Eliza agents API (cheshire-eliza body generator + catalog) */
+  elizaStatus: "/api/eliza-agents/status",
+  elizaCatalog: "/api/eliza-agents/catalog",
+  elizaPackage: "/api/eliza-agents/package",
+  elizaSolizard: "/api/eliza-agents/solizard",
+  elizaGenerate: "/api/eliza-agents/generate",
+  elizaDeploy: "/api/eliza-agents/deploy",
 };
 
 /** DNS-label slug for ar.dev Agent metadata.name */
@@ -186,6 +196,8 @@ export function hubLinks(siteUrl) {
     registry: `${base}${SITE_SURFACES.agentRegistry}`,
     arena: `${base}${SITE_SURFACES.arena}`,
     agentArena: `${base}${SITE_SURFACES.agentArena}`,
+    elizaAgents: `${base}${SITE_SURFACES.elizaAgents}`,
+    eliza: `${base}${SITE_SURFACES.eliza}`,
     registryAliases: [
       `${base}${SITE_SURFACES.registry}`,
       `${base}${SITE_SURFACES.agentsRegistry}`,
@@ -199,6 +211,12 @@ export function hubLinks(siteUrl) {
       arenaStatus: `${base}${API_SURFACES.arenaStatus}`,
       arenaAgents: `${base}${API_SURFACES.arenaAgents}`,
       arenaRegister: `${base}${API_SURFACES.arenaAgentsRegister}`,
+      elizaStatus: `${base}${API_SURFACES.elizaStatus}`,
+      elizaCatalog: `${base}${API_SURFACES.elizaCatalog}`,
+      elizaPackage: `${base}${API_SURFACES.elizaPackage}`,
+      elizaSolizard: `${base}${API_SURFACES.elizaSolizard}`,
+      elizaGenerate: `${base}${API_SURFACES.elizaGenerate}`,
+      elizaDeploy: `${base}${API_SURFACES.elizaDeploy}`,
     },
   };
 }

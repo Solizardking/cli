@@ -8,12 +8,13 @@
 
 <p align="center">
   <strong>Open-source CLI for Cheshire Terminal</strong><br/>
-  Public install · optional SIWS / API keys · skills · agent registry · arena · forge prepare<br/>
+  Public install · optional SIWS / API keys · skills · eliza agents · agent registry · arena · forge prepare<br/>
   Default origin: <code>https://cheshireterminal.ai</code>
 </p>
 
 <p align="center">
   <a href="https://cheshireterminal.ai/cli"><img src="https://img.shields.io/badge/OPEN_CLI_HUB-14f195?style=for-the-badge&labelColor=041008" alt="Open CLI Hub"></a>
+  <a href="https://cheshireterminal.ai/eliza-agents"><img src="https://img.shields.io/badge/ELIZA_STUDIO-38bdf8?style=for-the-badge&labelColor=0c1929" alt="Eliza Agents Studio"></a>
   <a href="https://cheshireterminal.ai/agents"><img src="https://img.shields.io/badge/AGENT_HUB-75f58b?style=for-the-badge&labelColor=07140d" alt="Agent Hub"></a>
   <a href="https://cheshireterminal.ai/agents/forge"><img src="https://img.shields.io/badge/AGENT_FORGE-c084fc?style=for-the-badge&labelColor=12081f" alt="Agent Forge"></a>
   <a href="https://github.com/Solizardking/cli"><img src="https://img.shields.io/badge/GitHub-Solizardking%2Fcli-181717?style=for-the-badge&labelColor=0d1117&logo=github&logoColor=white" alt="github.com/Solizardking/cli"></a>
@@ -37,6 +38,7 @@
 |-----------|----------|
 | Live site health | `cheshire-cli status` |
 | Skills catalog | `cheshire-cli skills` |
+| Eliza agents studio | `cheshire-cli eliza:status` · `eliza:generate` · `eliza:deploy` |
 | Wallet sign-in challenge | `cheshire-cli register:user --wallet <pubkey>` |
 | Optional developer key | `cheshire-cli set-key --api-key ct_sk_…` |
 | Prepare agent registry JSON | `cheshire-cli register:agent --dry-run` |
@@ -45,6 +47,7 @@
 | Arena rooms / host agent | `cheshire-cli arena:rooms` · `arena:register` |
 
 **Hub:** [cheshireterminal.ai/cli](https://cheshireterminal.ai/cli)  
+**Eliza studio:** [cheshireterminal.ai/eliza-agents](https://cheshireterminal.ai/eliza-agents)  
 **Agents catalog OSS:** [github.com/solizardking/agents](https://github.com/solizardking/agents)  
 **Optional forge package:** [`cheshire-terminal-agents`](https://www.npmjs.com/package/cheshire-terminal-agents)
 
@@ -52,11 +55,14 @@
 flowchart LR
   U[You] -->|npm or curl install| C[cheshire-cli]
   C -->|GET status / skills / agents| S[cheshireterminal.ai]
+  C -->|eliza:*| E[/api/eliza-agents/*]
+  E --> ES[Eliza studio /eliza-agents]
   C -->|optional SIWS| A[/api/auth/*]
   C -->|dry-run or confirm| R[/api/agent-registry/register]
   C -.->|forge prepare| F[cheshire-terminal-agents]
   F --> HUB[Agent Hub / Forge]
   S --> HUB
+  S --> ES
 ```
 
 This package does **not** custody private keys. Clone it, install it, and call the public site over HTTPS — no private product tree required.
@@ -163,6 +169,22 @@ cheshire-cli register:agent --confirm --name my-agent-slug
 cheshire-cli forge:prepare --file cheshire-registration.json
 ```
 
+### Eliza agents studio (`@elizaos/cheshire-eliza`)
+
+Same surface as the web studio at [/eliza-agents](https://cheshireterminal.ai/eliza-agents):
+
+```bash
+cheshire-cli eliza:status                         # package + plugins + cloud readiness
+cheshire-cli eliza:catalog                        # character seeds (Solizard first)
+cheshire-cli eliza:package                        # plugin bundle + ActionPlan examples
+cheshire-cli eliza:solizard                       # full Solizard package character JSON
+cheshire-cli eliza:generate --name ClawdScout --archetype trader \
+  --rails solana,robinhood --seed solizard
+cheshire-cli eliza:deploy --name ClawdScout --archetype trader --seed solizard
+```
+
+Optional flags on generate/deploy: `--no-e2b`, `--no-memory`, `--no-forge`, `--browser-use`, `--system-extra "…"`.
+
 ### Agent Arena
 
 ```bash
@@ -184,6 +206,12 @@ cheshire-cli arena:enter --id arena_ag_… --room room_…
 | `registry` | Agent-registry proxy status |
 | `connect` | Site endpoint map |
 | `sync` | Skills + agents + registry snapshot |
+| `eliza` / `eliza:status` | `GET /api/eliza-agents/status` |
+| `eliza:catalog` | Character seeds catalog |
+| `eliza:package` | Plugin bundle + multi-step ActionPlan examples |
+| `eliza:solizard` | Full Solizard package character |
+| `eliza:generate --name` | `POST /api/eliza-agents/generate` body JSON |
+| `eliza:deploy --name` | `POST /api/eliza-agents/deploy` plan + character |
 | `register:user --wallet` | `GET /api/auth/challenge?wallet=` |
 | `login --wallet --signature --message` | `POST /api/auth/verify` |
 | `whoami` | Credential source + principal |
@@ -212,6 +240,8 @@ Most commands print **JSON**. `help` prints text.
 | Agent registry | `GET /api/agent-registry/status` · `POST /api/agent-registry/register` |
 | Metaplex health | `GET /api/metaplex-agents/health` |
 | Browser agents | `GET /api/clawd/browser-agents` |
+| Eliza studio UI | [cheshireterminal.ai/eliza-agents](https://cheshireterminal.ai/eliza-agents) |
+| Eliza agents API | `GET /api/eliza-agents/status` · catalog · package · solizard · `POST` generate · deploy |
 | Arena | `GET /api/arena/status` · rooms · agents |
 
 Some remote routes may require a developer key or session depending on site policy. The CLI accepts optional credentials; it does not hard-code premium product funnels.

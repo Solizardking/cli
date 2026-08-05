@@ -83,6 +83,16 @@ Agent Arena (rooms + hosted agents on /arena):
   arena:enter --id <agentId> --room <roomId>
   arena:rooms
 
+Eliza agents studio (@elizaos/cheshire-eliza → /eliza-agents):
+  eliza | eliza:status                     # package + plugins + cloud readiness
+  eliza:catalog                            # character seeds (Solizard first)
+  eliza:package                            # plugin bundle + ActionPlan examples
+  eliza:solizard                           # full Solizard package character
+  eliza:generate --name <n> [--archetype operator|trader|forge-smith|researcher|mascot]
+                 [--rails solana,robinhood] [--seed solizard] [--no-e2b] [--no-memory]
+                 [--no-forge] [--browser-use] [--system-extra "…"]
+  eliza:deploy --name <n> [same flags as generate]   # deploy plan + character JSON
+
 Optional dual-rail forge package (separate npm):
   npx cheshire-terminal-agents
   npx cheshire-terminal-agents design --list
@@ -99,6 +109,7 @@ Public surfaces (runtime uses live HTTP — no local tree required):
   Agents     GET /api/clawd/browser-agents → /agents
   Skills     GET /api/skills → /skills
   Registry   GET /api/agent-registry → /agent-registry
+  Eliza      GET /api/eliza-agents/* → /eliza-agents
   Forge npm  cheshire-terminal-agents (optional peer)
   Agents OSS github.com/solizardking/agents
 
@@ -106,6 +117,8 @@ Examples:
   cheshire-cli status
   cheshire-cli sync
   cheshire-cli agents:list
+  cheshire-cli eliza:status
+  cheshire-cli eliza:generate --name ClawdScout --archetype trader
   cheshire-cli register:agent --id airdrop-hunter --dry-run
   cheshire-cli register:all --dry-run
   cheshire-cli arena:register --name my-bot --model kimi-k3 --confirm --host
@@ -1198,6 +1211,186 @@ export async function cmdRegisterAll(options = {}) {
   };
 }
 
+// ── Eliza agents studio (@elizaos/cheshire-eliza) ───────────────────────────
+
+function parseRailsFlag(raw) {
+  if (!raw) return undefined;
+  const parts = String(raw)
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const rails = parts.filter((p) => p === "solana" || p === "robinhood");
+  return rails.length ? rails : undefined;
+}
+
+/**
+ * GET /api/eliza-agents/status — package + plugins + readiness.
+ */
+export async function cmdElizaStatus(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const hubs = hubLinks(client.siteUrl);
+  try {
+    const { data } = await client.get(API_SURFACES.elizaStatus);
+    return {
+      ok: true,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      page: hubs.elizaAgents,
+      cli: {
+        package: CLI_PACKAGE_NAME,
+        hub: CLI_HUB_URL,
+        commands: [
+          `${CLI_NAME} eliza:status`,
+          `${CLI_NAME} eliza:catalog`,
+          `${CLI_NAME} eliza:generate --name <n> --archetype trader`,
+          `${CLI_NAME} eliza:deploy --name <n>`,
+        ],
+      },
+      status: data,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+export async function cmdElizaCatalog(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const hubs = hubLinks(client.siteUrl);
+  try {
+    const { data } = await client.get(API_SURFACES.elizaCatalog);
+    return {
+      ok: true,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      page: hubs.elizaAgents,
+      catalog: data,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+export async function cmdElizaPackage(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  try {
+    const { data } = await client.get(API_SURFACES.elizaPackage);
+    return {
+      ok: true,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      page: hubLinks(client.siteUrl).elizaAgents,
+      package: data,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+export async function cmdElizaSolizard(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  try {
+    const { data } = await client.get(API_SURFACES.elizaSolizard);
+    return {
+      ok: true,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      page: hubLinks(client.siteUrl).elizaAgents,
+      solizard: data,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+/**
+ * POST /api/eliza-agents/generate — body generator (cheshire-eliza).
+ */
+export async function cmdElizaGenerate(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const name = String(options.name || "").trim();
+  if (!name || name.length < 2) {
+    throw new Error("eliza:generate requires --name <agent-name> (min 2 chars)");
+  }
+  const body = {
+    name,
+    archetype: options.archetype || "operator",
+    rails: parseRailsFlag(options.rails) || ["solana", "robinhood"],
+    includeE2B: options.noE2b ? false : options.includeE2B !== false,
+    includeMemory: options.noMemory ? false : options.includeMemory !== false,
+    includeForge: options.noForge ? false : options.includeForge !== false,
+    includeBrowserUse: Boolean(options.browserUse || options.includeBrowserUse),
+    systemExtra: options.systemExtra || options["system-extra"] || undefined,
+    seedCharacterId: options.seed || options.seedCharacterId || undefined,
+  };
+  try {
+    const { data } = await client.post(API_SURFACES.elizaGenerate, body);
+    return {
+      ok: true,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      page: hubLinks(client.siteUrl).elizaAgents,
+      request: body,
+      result: data,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+/**
+ * POST /api/eliza-agents/deploy — deploy plan + character.
+ */
+export async function cmdElizaDeploy(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const name = String(options.name || "").trim();
+  if (!name || name.length < 2) {
+    throw new Error("eliza:deploy requires --name <agent-name> (min 2 chars)");
+  }
+  const body = {
+    name,
+    archetype: options.archetype || "operator",
+    rails: parseRailsFlag(options.rails) || ["solana", "robinhood"],
+    includeE2B: options.noE2b ? false : options.includeE2B !== false,
+    includeMemory: options.noMemory ? false : options.includeMemory !== false,
+    includeForge: options.noForge ? false : options.includeForge !== false,
+    includeBrowserUse: Boolean(options.browserUse || options.includeBrowserUse),
+    systemExtra: options.systemExtra || options["system-extra"] || undefined,
+    seedCharacterId: options.seed || options.seedCharacterId || undefined,
+    preferCloud: options.preferCloud !== false,
+  };
+  try {
+    const { data } = await client.post(API_SURFACES.elizaDeploy, body);
+    return {
+      ok: true,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      page: hubLinks(client.siteUrl).elizaAgents,
+      request: body,
+      result: data,
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
 export async function cmdConnect(options = {}) {
   const siteUrl = resolveSiteUrl(options.siteUrl);
   const hubs = hubLinks(siteUrl);
@@ -1209,6 +1402,7 @@ export async function cmdConnect(options = {}) {
       hubUi: "GET /api/clawd/browser-agents → /agents",
       skills: "GET /api/skills → /skills",
       registry: "registry.cheshireterminal.ai → /api/agent-registry → /agent-registry",
+      eliza: "GET /api/eliza-agents/* → /eliza-agents (@elizaos/cheshire-eliza)",
       forge: "npm cheshire-terminal-agents (optional peer)",
       upstream: "github.com/solizardking/agents",
     },
@@ -1228,6 +1422,10 @@ export async function cmdConnect(options = {}) {
       browserAgents: hubs.api.browserAgents,
       agentsHub: hubs.agents,
       agentForge: hubs.forge,
+      elizaAgents: hubs.elizaAgents,
+      elizaStatus: hubs.api.elizaStatus,
+      elizaCatalog: hubs.api.elizaCatalog,
+      elizaPackage: hubs.api.elizaPackage,
       agentRegistry: hubs.registry,
       registryApi: hubs.api.registryStatus,
       registryRegister: hubs.api.register,
@@ -1510,6 +1708,17 @@ export async function runCommand(argv) {
     slug: flags.slug,
     agentId: flags["agent-id"] || flags.agentId,
     agent: flags.agent,
+    archetype: flags.archetype,
+    rails: flags.rails,
+    seed: flags.seed || flags["seed-id"] || flags.seedId,
+    seedCharacterId: flags.seed || flags["seed-id"] || flags.seedId,
+    systemExtra: flags["system-extra"] || flags.systemExtra,
+    noE2b: Boolean(flags["no-e2b"] || flags.noE2b),
+    noMemory: Boolean(flags["no-memory"] || flags.noMemory),
+    noForge: Boolean(flags["no-forge"] || flags.noForge),
+    browserUse: Boolean(flags["browser-use"] || flags.browserUse),
+    includeBrowserUse: Boolean(flags["browser-use"] || flags.browserUse),
+    preferCloud: flags["prefer-cloud"] !== "false" && flags.preferCloud !== false,
     command,
   };
 
@@ -1607,6 +1816,34 @@ export async function runCommand(argv) {
       case "forge:prepare":
       case "forge-prepare":
         result = await cmdForgePrepare(opts);
+        break;
+      case "eliza":
+      case "eliza:status":
+      case "eliza-agents":
+        result = await cmdElizaStatus(opts);
+        break;
+      case "eliza:catalog":
+        result = await cmdElizaCatalog(opts);
+        break;
+      case "eliza:package":
+        result = await cmdElizaPackage(opts);
+        break;
+      case "eliza:solizard":
+        result = await cmdElizaSolizard(opts);
+        break;
+      case "eliza:generate":
+      case "eliza:body":
+        result = await cmdElizaGenerate({
+          ...opts,
+          name: flags.name || positionals[0],
+        });
+        break;
+      case "eliza:deploy":
+      case "eliza:plan":
+        result = await cmdElizaDeploy({
+          ...opts,
+          name: flags.name || positionals[0],
+        });
         break;
       case "arena":
       case "arena:status":

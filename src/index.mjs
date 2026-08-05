@@ -36,6 +36,12 @@ export {
   cmdRegisterAll,
   cmdConnect,
   cmdForgePrepare,
+  cmdElizaStatus,
+  cmdElizaCatalog,
+  cmdElizaPackage,
+  cmdElizaSolizard,
+  cmdElizaGenerate,
+  cmdElizaDeploy,
   cmdPin,
   runCommand,
 } from "./commands.mjs";

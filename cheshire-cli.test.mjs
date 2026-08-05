@@ -25,12 +25,16 @@ import {
   cmdAgents,
   cmdSync,
   cmdConnect,
+  cmdElizaGenerate,
+  cmdElizaDeploy,
 } from "./src/commands.mjs";
 import {
   normalizeBrowserAgents,
   catalogAgentToRegisterBody,
   toRegistryName,
   hubLinks,
+  API_SURFACES,
+  SITE_SURFACES,
 } from "./src/catalog.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -136,10 +140,70 @@ describe("usage / help", () => {
     assert.doesNotMatch(text, /monorepo tree/i);
   });
 
+  it("usage text documents eliza:* studio commands", () => {
+    const text = usageText();
+    assert.match(text, /eliza:status/);
+    assert.match(text, /eliza:catalog/);
+    assert.match(text, /eliza:package/);
+    assert.match(text, /eliza:solizard/);
+    assert.match(text, /eliza:generate/);
+    assert.match(text, /eliza:deploy/);
+    assert.match(text, /\/api\/eliza-agents/);
+    assert.match(text, /\/eliza-agents/);
+    assert.match(text, /@elizaos\/cheshire-eliza|cheshire-eliza/);
+  });
+
   it("runCommand help returns usage", async () => {
     const { exitCode, text, result } = await runCommand(["help"]);
     assert.equal(exitCode, 0);
     assert.ok(text?.includes("Cheshire Terminal") || result?.help);
+  });
+});
+
+describe("eliza commands (offline)", () => {
+  it("cmdElizaGenerate requires --name", async () => {
+    await assert.rejects(
+      () => cmdElizaGenerate({ siteUrl: "https://example.test" }),
+      /eliza:generate requires --name/,
+    );
+    await assert.rejects(
+      () => cmdElizaGenerate({ siteUrl: "https://example.test", name: "x" }),
+      /eliza:generate requires --name/,
+    );
+  });
+
+  it("cmdElizaDeploy requires --name", async () => {
+    await assert.rejects(
+      () => cmdElizaDeploy({ siteUrl: "https://example.test" }),
+      /eliza:deploy requires --name/,
+    );
+  });
+
+  it("runCommand dispatches eliza:generate missing name as error exit", async () => {
+    const { exitCode, result } = await runCommand(["eliza:generate", "--site", "https://example.test"]);
+    assert.equal(exitCode, 1);
+    assert.ok(result?.error || result?.message);
+    const msg = String(result?.error || result?.message || "");
+    assert.match(msg, /eliza:generate requires --name/);
+  });
+
+  it("cmdConnect maps eliza agents hubs and APIs", async () => {
+    const result = await cmdConnect({ siteUrl: "https://cheshireterminal.ai" });
+    assert.equal(result.hubs.elizaAgents, "https://cheshireterminal.ai/eliza-agents");
+    assert.equal(result.endpoints.elizaAgents, "https://cheshireterminal.ai/eliza-agents");
+    assert.equal(
+      result.endpoints.elizaStatus,
+      "https://cheshireterminal.ai/api/eliza-agents/status",
+    );
+    assert.equal(
+      result.endpoints.elizaCatalog,
+      "https://cheshireterminal.ai/api/eliza-agents/catalog",
+    );
+    assert.equal(
+      result.endpoints.elizaPackage,
+      "https://cheshireterminal.ai/api/eliza-agents/package",
+    );
+    assert.match(result.sourceOfTruth.eliza, /eliza-agents/);
   });
 });
 
@@ -234,11 +298,41 @@ describe("live site commands (network)", () => {
     assert.match(result.endpoints.gateway, /cheshireterminal\.ai\/gateway/);
     assert.match(result.endpoints.gatewayStatus, /\/api\/gateway\/status/);
     assert.match(result.endpoints.cliHub, /\/cli/);
+    assert.match(result.endpoints.elizaAgents || "", /\/eliza-agents/);
+    assert.match(result.endpoints.elizaStatus || "", /\/api\/eliza-agents\/status/);
     assert.equal(result.endpoints.agentsGithub, "https://github.com/solizardking/agents");
     assert.equal(result.credentials.envApiKey, "CHESHIRE_API_KEY");
     assert.equal(result.npm?.package, "cheshire-terminal-cli");
     assert.match(result.npm?.install || "", /cheshire-terminal-cli/);
     assert.equal(result.forgePackage.npm, "cheshire-terminal-agents");
+  });
+
+  it("eliza:status hits public studio API", async () => {
+    const { exitCode, result } = await runCommand(["eliza:status", "--site", SITE]);
+    // Live site may or may not expose the route yet; accept ok or structured HTTP error
+    if (exitCode === 0 && result?.ok) {
+      assert.equal(result.brand, "Cheshire Terminal");
+      assert.match(result.page || "", /\/eliza-agents/);
+      assert.ok(result.status || result.cli);
+      if (result.cli?.commands) {
+        assert.ok(result.cli.commands.some((c) => String(c).includes("eliza:")));
+      }
+    } else {
+      assert.ok(
+        result?.error || result?.status >= 400 || exitCode === 1,
+        `unexpected eliza:status shape: ${JSON.stringify(result)}`,
+      );
+    }
+  });
+
+  it("eliza:catalog returns characters when available", async () => {
+    const { exitCode, result } = await runCommand(["eliza:catalog", "--site", SITE]);
+    if (exitCode === 0 && result?.ok) {
+      const chars = result.catalog?.characters;
+      assert.ok(Array.isArray(chars) || result.catalog);
+    } else {
+      assert.ok(result?.error || exitCode === 1);
+    }
   });
 
   it("runCommand status via dispatcher", async () => {
@@ -298,6 +392,11 @@ describe("catalog helpers", () => {
     assert.equal(hubs.cli, "https://cheshireterminal.ai/cli");
     assert.equal(hubs.gateway, "https://cheshireterminal.ai/gateway");
     assert.equal(hubs.agents, "https://cheshireterminal.ai/agents");
+    assert.equal(hubs.elizaAgents, "https://cheshireterminal.ai/eliza-agents");
+    assert.equal(hubs.api.elizaStatus, "https://cheshireterminal.ai/api/eliza-agents/status");
+    assert.equal(hubs.api.elizaGenerate, "https://cheshireterminal.ai/api/eliza-agents/generate");
+    assert.equal(SITE_SURFACES.elizaAgents, "/eliza-agents");
+    assert.equal(API_SURFACES.elizaDeploy, "/api/eliza-agents/deploy");
   });
 
   it("normalizeBrowserAgents + register body", () => {
