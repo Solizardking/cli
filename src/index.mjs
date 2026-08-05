@@ -48,6 +48,9 @@ export {
 export {
   SITE_SURFACES,
   API_SURFACES,
+  OPEN_SOURCE_REPOS,
+  openSourceGithubUrls,
+  openSourceDiscoveryFragment,
   normalizeBrowserAgents,
   catalogAgentToRegisterBody,
   hubLinks,

@@ -19,9 +19,11 @@ import {
 import { createClient, CheshireHttpError } from "./client.mjs";
 import {
   API_SURFACES,
+  OPEN_SOURCE_REPOS,
   catalogAgentToRegisterBody,
   hubLinks,
   normalizeBrowserAgents,
+  openSourceDiscoveryFragment,
   tryLoadLocalPackageCatalog,
   toRegistryName,
 } from "./catalog.mjs";
@@ -111,7 +113,7 @@ Public surfaces (runtime uses live HTTP — no local tree required):
   Registry   GET /api/agent-registry → /agent-registry
   Eliza      GET /api/eliza-agents/* → /eliza-agents
   Forge npm  cheshire-terminal-agents (optional peer)
-  Agents OSS github.com/solizardking/agents
+  OSS        agents · cli · eliza · cheshire-terminal (Solizardking/*)
 
 Examples:
   cheshire-cli status
@@ -425,9 +427,14 @@ export async function cmdStatus(options = {}) {
       cli: `${siteUrl}/cli`,
       gateway: `${siteUrl}/gateway`,
       agents: `${siteUrl}/agents`,
+      elizaAgents: `${siteUrl}/eliza-agents`,
       forge: `${siteUrl}/agents/forge`,
-      agentsGithub: "https://github.com/solizardking/agents",
+      agentsGithub: OPEN_SOURCE_REPOS.agents.url,
+      cliGithub: OPEN_SOURCE_REPOS.cli.url,
+      elizaGithub: OPEN_SOURCE_REPOS.eliza.url,
+      cheshireTerminalGithub: OPEN_SOURCE_REPOS.cheshireTerminal.url,
     },
+    openSource: openSourceDiscoveryFragment(),
     errors: [],
   };
 
@@ -1404,8 +1411,10 @@ export async function cmdConnect(options = {}) {
       registry: "registry.cheshireterminal.ai → /api/agent-registry → /agent-registry",
       eliza: "GET /api/eliza-agents/* → /eliza-agents (@elizaos/cheshire-eliza)",
       forge: "npm cheshire-terminal-agents (optional peer)",
-      upstream: "github.com/solizardking/agents",
+      upstream: OPEN_SOURCE_REPOS.agents.url,
+      openSource: "agents · cli · eliza · cheshire-terminal",
     },
+    openSource: hubs.openSource || openSourceDiscoveryFragment(),
     endpoints: {
       web: siteUrl,
       api: `${siteUrl}/api`,
@@ -1429,7 +1438,10 @@ export async function cmdConnect(options = {}) {
       agentRegistry: hubs.registry,
       registryApi: hubs.api.registryStatus,
       registryRegister: hubs.api.register,
-      agentsGithub: "https://github.com/solizardking/agents",
+      agentsGithub: OPEN_SOURCE_REPOS.agents.url,
+      cliGithub: OPEN_SOURCE_REPOS.cli.url,
+      elizaGithub: OPEN_SOURCE_REPOS.eliza.url,
+      cheshireTerminalGithub: OPEN_SOURCE_REPOS.cheshireTerminal.url,
       registryNative: "https://registry.cheshireterminal.ai/",
       mcp: `${siteUrl}/mcp`,
       x402: `${siteUrl}/x402`,

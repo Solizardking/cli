@@ -48,7 +48,17 @@
 
 **Hub:** [cheshireterminal.ai/cli](https://cheshireterminal.ai/cli)  
 **Eliza studio:** [cheshireterminal.ai/eliza-agents](https://cheshireterminal.ai/eliza-agents)  
-**Agents catalog OSS:** [github.com/solizardking/agents](https://github.com/solizardking/agents)  
+**Agents hub:** [cheshireterminal.ai/agents](https://cheshireterminal.ai/agents)  
+
+### Open-source companion repos
+
+| Repo | Role | Site hub |
+|------|------|----------|
+| **[Solizardking/cli](https://github.com/Solizardking/cli)** (this package) | Official site CLI | [/cli](https://cheshireterminal.ai/cli) |
+| **[Solizardking/agents](https://github.com/Solizardking/agents)** | Agent catalog + forge scaffolds | [/agents](https://cheshireterminal.ai/agents) |
+| **[Solizardking/eliza](https://github.com/Solizardking/eliza)** | elizaOS fork + `@elizaos/cheshire-eliza` | [/eliza-agents](https://cheshireterminal.ai/eliza-agents) |
+| **[Solizardking/cheshire-terminal](https://github.com/Solizardking/cheshire-terminal)** | Main product app | [cheshireterminal.ai](https://cheshireterminal.ai) |
+
 **Optional forge package:** [`cheshire-terminal-agents`](https://www.npmjs.com/package/cheshire-terminal-agents)
 
 ```mermaid

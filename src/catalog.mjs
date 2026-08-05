@@ -6,11 +6,74 @@
  *
  * │ Surface                    │ Public source                                │
  * │ /agents                    │ GET /api/clawd/browser-agents                │
+ * │ /eliza-agents              │ GET /api/eliza-agents/*                      │
  * │ /skills                    │ GET /api/skills                              │
  * │ /agent-registry            │ registry.cheshireterminal.ai via /api/agent-registry │
  * │ Dual-rail forge (optional) │ npm cheshire-terminal-agents                 │
- * │ Agents catalog OSS         │ github.com/solizardking/agents               │
+ * │ OSS (four repos)           │ agents · cli · eliza · cheshire-terminal     │
  */
+
+/** Canonical four Solizardking open-source repos (mirrors monorepo shared/open-source-repos). */
+export const OPEN_SOURCE_REPOS = {
+  agents: {
+    id: "agents",
+    url: "https://github.com/Solizardking/agents",
+    npm: "cheshire-terminal-agents",
+    npmUrl: "https://www.npmjs.com/package/cheshire-terminal-agents",
+    siteHub: "/agents",
+    role: "Agent catalog definitions + forge scaffolds",
+  },
+  cli: {
+    id: "cli",
+    url: "https://github.com/Solizardking/cli",
+    npm: "cheshire-terminal-cli",
+    npmUrl: "https://www.npmjs.com/package/cheshire-terminal-cli",
+    siteHub: "/cli",
+    role: "Official site CLI (status, skills, eliza:*, registry, arena)",
+  },
+  eliza: {
+    id: "eliza",
+    url: "https://github.com/Solizardking/eliza",
+    package: "@elizaos/cheshire-eliza",
+    siteHub: "/eliza-agents",
+    role: "elizaOS fork + cheshire-eliza character/body generator",
+  },
+  cheshireTerminal: {
+    id: "cheshire-terminal",
+    url: "https://github.com/Solizardking/cheshire-terminal",
+    siteHub: "/",
+    role: "Main product app (server, client, API, hub pages)",
+  },
+};
+
+export function openSourceGithubUrls() {
+  return {
+    agents: OPEN_SOURCE_REPOS.agents.url,
+    cli: OPEN_SOURCE_REPOS.cli.url,
+    eliza: OPEN_SOURCE_REPOS.eliza.url,
+    cheshireTerminal: OPEN_SOURCE_REPOS.cheshireTerminal.url,
+  };
+}
+
+export function openSourceDiscoveryFragment() {
+  const urls = openSourceGithubUrls();
+  return {
+    github: urls,
+    repos: Object.values(OPEN_SOURCE_REPOS).map((r) => ({
+      id: r.id,
+      url: r.url,
+      role: r.role,
+      siteHub: r.siteHub,
+      ...(r.npm ? { npm: r.npm } : {}),
+      ...(r.package ? { package: r.package } : {}),
+    })),
+    productHubs: {
+      agents: "https://cheshireterminal.ai/agents",
+      elizaAgents: "https://cheshireterminal.ai/eliza-agents",
+      cli: "https://cheshireterminal.ai/cli",
+    },
+  };
+}
 
 export const SITE_SURFACES = {
   cli: "/cli",
@@ -172,7 +235,7 @@ export function catalogAgentToRegisterBody(agent, options = {}) {
     namespace: options.namespace || "default",
     repositoryUrl:
       options.repositoryUrl ||
-      "https://github.com/Solizardking/agents",
+      OPEN_SOURCE_REPOS.agents.url,
     image:
       options.image ||
       (typeof agent.avatar === "string" ? agent.avatar : undefined) ||
@@ -186,6 +249,7 @@ export function catalogAgentToRegisterBody(agent, options = {}) {
  */
 export function hubLinks(siteUrl) {
   const base = String(siteUrl || "https://cheshireterminal.ai").replace(/\/+$/, "");
+  const openSource = openSourceDiscoveryFragment();
   return {
     cli: `${base}${SITE_SURFACES.cli}`,
     gateway: `${base}${SITE_SURFACES.gateway}`,
@@ -202,6 +266,8 @@ export function hubLinks(siteUrl) {
       `${base}${SITE_SURFACES.registry}`,
       `${base}${SITE_SURFACES.agentsRegistry}`,
     ],
+    openSource,
+    github: openSource.github,
     api: {
       skills: `${base}${API_SURFACES.skills}`,
       browserAgents: `${base}${API_SURFACES.browserAgents}`,
