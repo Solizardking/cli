@@ -10,10 +10,10 @@
  * │ /skills                    │ GET /api/skills                              │
  * │ /agent-registry            │ registry.cheshireterminal.ai via /api/agent-registry │
  * │ Dual-rail forge (optional) │ npm cheshire-terminal-agents                 │
- * │ OSS (four repos)           │ agents · cli · eliza · cheshire-terminal     │
+ * │ OSS                        │ agents · cli · eliza · cheshire-terminal · Zero-clawd │
  */
 
-/** Canonical four Solizardking open-source repos (mirrors monorepo shared/open-source-repos). */
+/** Canonical Solizardking open-source repos (mirrors monorepo shared/open-source-repos). */
 export const OPEN_SOURCE_REPOS = {
   agents: {
     id: "agents",
@@ -44,6 +44,15 @@ export const OPEN_SOURCE_REPOS = {
     siteHub: "/",
     role: "Main product app (server, client, API, hub pages)",
   },
+  zeroClawd: {
+    id: "Zero-clawd",
+    url: "https://github.com/Solizardking/Zero-clawd",
+    npm: "clawdbot-go",
+    npmUrl: "https://www.npmjs.com/package/clawdbot-go",
+    siteHub: "/zero-clawd",
+    installHost: "https://install.cheshireterminal.ai",
+    role: "Zero Clawd runtime (clawdbot-go) + one-shot install edge",
+  },
 };
 
 export function openSourceGithubUrls() {
@@ -52,6 +61,7 @@ export function openSourceGithubUrls() {
     cli: OPEN_SOURCE_REPOS.cli.url,
     eliza: OPEN_SOURCE_REPOS.eliza.url,
     cheshireTerminal: OPEN_SOURCE_REPOS.cheshireTerminal.url,
+    zeroClawd: OPEN_SOURCE_REPOS.zeroClawd.url,
   };
 }
 
@@ -66,11 +76,18 @@ export function openSourceDiscoveryFragment() {
       siteHub: r.siteHub,
       ...(r.npm ? { npm: r.npm } : {}),
       ...(r.package ? { package: r.package } : {}),
+      ...(r.installHost ? { installHost: r.installHost } : {}),
     })),
     productHubs: {
       agents: "https://cheshireterminal.ai/agents",
       elizaAgents: "https://cheshireterminal.ai/eliza-agents",
       cli: "https://cheshireterminal.ai/cli",
+      zeroClawd: "https://cheshireterminal.ai/zero-clawd",
+    },
+    install: {
+      zeroClawd: "https://install.cheshireterminal.ai",
+      zeroClawdFallback: "https://install.onchainai.fund",
+      zeroClawdApi: "https://cheshireterminal.ai/api/zeroclawd/install.sh",
     },
   };
 }
