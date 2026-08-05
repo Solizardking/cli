@@ -53,6 +53,13 @@ export const OPEN_SOURCE_REPOS = {
     installHost: "https://install.cheshireterminal.ai",
     role: "Zero Clawd runtime (clawdbot-go) + one-shot install edge",
   },
+  robotics: {
+    id: "Solana-Robotics-Kit",
+    url: "https://github.com/Solizardking/Solana-Robotics-Kit",
+    siteHub: "/robotics",
+    website: "https://solanarobotics.org",
+    role: "Solana Robotics monorepo — $CLAWD, Eliza robot, brain, Asimov, Jetson",
+  },
 };
 
 export function openSourceGithubUrls() {
@@ -62,6 +69,7 @@ export function openSourceGithubUrls() {
     eliza: OPEN_SOURCE_REPOS.eliza.url,
     cheshireTerminal: OPEN_SOURCE_REPOS.cheshireTerminal.url,
     zeroClawd: OPEN_SOURCE_REPOS.zeroClawd.url,
+    robotics: OPEN_SOURCE_REPOS.robotics.url,
   };
 }
 
@@ -83,11 +91,14 @@ export function openSourceDiscoveryFragment() {
       elizaAgents: "https://cheshireterminal.ai/eliza-agents",
       cli: "https://cheshireterminal.ai/cli",
       zeroClawd: "https://cheshireterminal.ai/zero-clawd",
+      robotics: "https://cheshireterminal.ai/robotics",
     },
     install: {
       zeroClawd: "https://install.cheshireterminal.ai",
       zeroClawdFallback: "https://install.onchainai.fund",
       zeroClawdApi: "https://cheshireterminal.ai/api/zeroclawd/install.sh",
+      roboticsClone:
+        "git clone https://github.com/Solizardking/Solana-Robotics-Kit.git && cd Solana-Robotics-Kit && pnpm install && ./start.sh",
     },
   };
 }
