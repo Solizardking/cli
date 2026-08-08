@@ -116,6 +116,12 @@ describe("usage / help", () => {
     assert.match(text, /public non-holder|public/);
   });
 
+  it("usage text documents Ink interactive shell", () => {
+    const text = usageText();
+    assert.match(text, /Ink|tui|repl/);
+    assert.match(text, /--ink-smoke|ink-smoke/);
+  });
+
   it("usage text is Cheshire branded without solanaclawd primary host", () => {
     const text = usageText();
     assert.match(text, /Cheshire Terminal/);
@@ -234,6 +240,18 @@ describe("CLI process entry", () => {
     assert.match(proc.stdout, /"cliHub":\s*"https:\/\/cheshireterminal\.ai\/cli"/);
     assert.match(proc.stdout, /"cli":\s*"https:\/\/cheshireterminal\.ai\/cli"/);
     assert.doesNotMatch(proc.stdout, /solanaclawd\.com/);
+  });
+
+  it("cheshire-cli.mjs --ink-smoke mounts Ink and prints success marker", () => {
+    const proc = spawnSync(process.execPath, [CLI, "--ink-smoke"], {
+      encoding: "utf8",
+      env: { ...process.env, CHESHIRE_SITE_URL: "https://cheshireterminal.ai" },
+      timeout: 15_000,
+    });
+    assert.equal(proc.status, 0, proc.stderr || proc.stdout);
+    assert.match(proc.stdout, /ink-smoke ok/);
+    assert.match(proc.stdout, /Cheshire Terminal|cheshire-cli/);
+    assert.match(proc.stdout, /cheshireterminal\.ai/);
   });
 });
 

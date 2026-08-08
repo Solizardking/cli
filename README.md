@@ -36,6 +36,7 @@
 
 | You want… | You run… |
 |-----------|----------|
+| **Ink interactive shell** | `cheshire-cli` (TTY) or `cheshire-cli tui` |
 | Live site health | `cheshire-cli status` |
 | Skills catalog | `cheshire-cli skills` |
 | Eliza agents studio | `cheshire-cli eliza:status` · `eliza:generate` · `eliza:deploy` |
@@ -98,7 +99,20 @@ export PATH="$HOME/.local/bin:$PATH"
 
 cheshire-cli help
 cheshire-cli status
+cheshire-cli tui          # Ink React terminal shell
 ```
+
+### Interactive Ink TUI
+
+The CLI ships an **[Ink](https://github.com/vadimdemedes/ink)** (React) shell for interactive use:
+
+```bash
+cheshire-cli              # bare launch on a TTY
+cheshire-cli tui          # force Ink shell
+cheshire-cli --ink-smoke  # CI mount smoke
+```
+
+Type commands at the `›` prompt (`status`, `skills`, `connect`, `help`, `exit`). Non-interactive scripts keep using subcommands that print JSON/text without Ink.
 
 ### From this repository
 
