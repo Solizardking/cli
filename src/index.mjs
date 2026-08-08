@@ -57,3 +57,17 @@ export {
   toRegistryName,
   tryLoadLocalPackageCatalog,
 } from "./catalog.mjs";
+export {
+  wantsInkShell,
+  wantsInkSmoke,
+  launchInkShell,
+  runInkSmoke,
+  INK_SHELL_COMMANDS,
+} from "./ink/entry.mjs";
+export { Banner } from "./ink/Banner.mjs";
+export { App as InkApp } from "./ink/App.mjs";
+export {
+  BANNER_PRIMARY_MARKERS,
+  getBannerModel,
+  BANNER_TITLE,
+} from "./ink/banner-data.mjs";

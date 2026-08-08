@@ -37,6 +37,11 @@ Usage:
   cheshire-cli <command> [options]
   npx cheshire-terminal-cli <command>
 
+Interactive Ink terminal (React TUI):
+  cheshire-cli                 # bare TTY launch → Ink shell
+  cheshire-cli tui | repl      # force Ink shell
+  cheshire-cli --ink-smoke     # short mount smoke (CI)
+
 Install:
   npm i -g cheshire-terminal-cli
   # or: curl -fsSL ${DEFAULT_SITE_URL}/api/cli/install.sh | bash
@@ -53,6 +58,7 @@ Auth (optional — never paste private keys into the CLI):
 
 Discovery (public site surfaces):
   help | status | connect | sync
+  tui | repl | --ink-smoke               → Ink interactive shell / CI smoke
   skills [query] | skills:search <q>       → /skills · /api/skills
   agents | agents:list | agents:show --id  → /agents · /api/clawd/browser-agents
   registry | registry:list                 → /agent-registry · /api/agent-registry
@@ -1741,6 +1747,23 @@ export async function runCommand(argv) {
       case "-h":
       case "--help":
         return { exitCode: 0, result: { help: true, text: usageText() }, text: usageText() };
+      case "tui":
+      case "repl":
+      case "shell":
+      case "--tui":
+      case "--repl":
+      case "--ink":
+        // Handled by process entry (Ink shell). If runCommand is invoked directly,
+        // return a pointer so library consumers know to launch Ink.
+        return {
+          exitCode: 0,
+          result: {
+            ok: true,
+            ink: true,
+            message: "Launch the process entry with tui/repl/--tui for the Ink shell.",
+          },
+          text: "Ink shell: run `cheshire-cli tui` (or bare `cheshire-cli` on a TTY).",
+        };
       case "status":
         result = await cmdStatus(opts);
         break;
