@@ -1,5 +1,5 @@
 {
-  "name": "cheshire-terminal-cli",
+  "name": "@x402solana/clawd-plugin",
   "version": "1.2.0",
   "description": "Open-source Cheshire Terminal CLI — Ink TUI, agentic wallet (@solana/kit), dual hubs cheshireterminal.ai/cli + solanaclawd.com/cli, skills, eliza, registry, arena.",
   "type": "module",
