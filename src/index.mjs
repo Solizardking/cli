@@ -1,13 +1,18 @@
 /** Public exports for Cheshire Terminal CLI modules. */
 export {
   DEFAULT_SITE_URL,
+  DEFAULT_SOLANA_CLAWD_URL,
   CLI_NAME,
   CLI_BRAND,
   CLI_PACKAGE_NAME,
   CLI_HUB_URL,
   CLI_GATEWAY_URL,
+  SOLANA_CLAWD_HUB_URL,
+  DUAL_HOSTS,
   CLI_ROOT,
   resolveSiteUrl,
+  resolveSolanaClawdUrl,
+  resolveDualHubs,
   resolveApiBase,
   resolveApiKey,
   loadCredentials,
@@ -20,6 +25,7 @@ export {
   usageText,
   buildAgentRegistryPayload,
   cmdStatus,
+  cmdProviders,
   cmdSkills,
   cmdAgents,
   cmdRegistry,
@@ -46,6 +52,12 @@ export {
   runCommand,
 } from "./commands.mjs";
 export {
+  PROVIDER_ENV_SPECS,
+  PROVIDER_ENV_NAMES,
+  getProviderEnvStatus,
+  buildProvidersStatusReport,
+} from "./providers.mjs";
+export {
   SITE_SURFACES,
   API_SURFACES,
   OPEN_SOURCE_REPOS,
@@ -57,6 +69,18 @@ export {
   toRegistryName,
   tryLoadLocalPackageCatalog,
 } from "./catalog.mjs";
+export {
+  loadAgenticWalletCore,
+  cmdWalletStatus,
+  cmdWalletCreate,
+  cmdWalletAddress,
+  cmdWalletBalance,
+  cmdWalletPolicy,
+  cmdWalletSlot,
+  probeWalletCliHubs,
+  AGENTIC_VAULT_PATH,
+  AGENTIC_VAULT_DIR,
+} from "./wallet.mjs";
 export {
   wantsInkShell,
   wantsInkSmoke,

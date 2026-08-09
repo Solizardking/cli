@@ -9,7 +9,11 @@ import {
   CLI_HUB_URL,
   CLI_GATEWAY_URL,
   DEFAULT_SITE_URL,
+  DEFAULT_SOLANA_CLAWD_URL,
+  SOLANA_CLAWD_HUB_URL,
   resolveSiteUrl,
+  resolveSolanaClawdUrl,
+  resolveDualHubs,
   resolveApiKey,
   loadCredentials,
   saveCredentials,
@@ -27,15 +31,30 @@ import {
   tryLoadLocalPackageCatalog,
   toRegistryName,
 } from "./catalog.mjs";
+import {
+  cmdWalletStatus,
+  cmdWalletCreate,
+  cmdWalletAddress,
+  cmdWalletBalance,
+  cmdWalletPolicy,
+  cmdWalletSlot,
+  probeWalletCliHubs,
+} from "./wallet.mjs";
+import {
+  PROVIDER_ENV_NAMES,
+  buildProvidersStatusReport,
+  providerEnvUsageLines,
+} from "./providers.mjs";
 
 export function usageText() {
   return `${CLI_BRAND} CLI (${CLI_NAME})
 Open-source CLI for Cheshire Terminal public APIs.
-npm: ${CLI_PACKAGE_NAME} · hub: ${CLI_HUB_URL} · gateway: ${CLI_GATEWAY_URL}
+npm: ${CLI_PACKAGE_NAME} · hub: ${CLI_HUB_URL} · companion: ${SOLANA_CLAWD_HUB_URL}
 
 Usage:
   cheshire-cli <command> [options]
   npx cheshire-terminal-cli <command>
+  clawd-cli <command>                 # alias (same binary)
 
 Interactive Ink terminal (React TUI):
   cheshire-cli                 # bare TTY launch → Ink shell
@@ -45,11 +64,17 @@ Interactive Ink terminal (React TUI):
 Install:
   npm i -g cheshire-terminal-cli
   # or: curl -fsSL ${DEFAULT_SITE_URL}/api/cli/install.sh | bash
+  # companion: curl -fsSL ${DEFAULT_SOLANA_CLAWD_URL}/api/cli/install.sh | bash
 
 Environment:
   CHESHIRE_SITE_URL          Site origin (default: ${DEFAULT_SITE_URL})
+  SOLANA_CLAWD_SITE_URL      Companion origin (default: ${DEFAULT_SOLANA_CLAWD_URL})
   CHESHIRE_API_KEY           Optional developer API key (ct_sk_…) for authenticated calls
   CHESHIRE_CREDENTIALS_PATH  Optional credentials JSON path
+  CHESHIRE_WALLET_PASS       Passphrase for agentic wallet:create (optional)
+
+Provider API keys (set/unset only in status — never printed):
+${providerEnvUsageLines()}
 
 Auth (optional — never paste private keys into the CLI):
   SIWS     register:user → sign challenge in your wallet → login
@@ -57,7 +82,7 @@ Auth (optional — never paste private keys into the CLI):
            Create keys at ${CLI_GATEWAY_URL} when the site requires them
 
 Discovery (public site surfaces):
-  help | status | connect | sync
+  help | status | connect | providers | sync
   tui | repl | --ink-smoke               → Ink interactive shell / CI smoke
   skills [query] | skills:search <q>       → /skills · /api/skills
   agents | agents:list | agents:show --id  → /agents · /api/clawd/browser-agents
@@ -91,6 +116,15 @@ Agent Arena (rooms + hosted agents on /arena):
   arena:enter --id <agentId> --room <roomId>
   arena:rooms
 
+Agentic wallet (local non-custodial · @solana/kit · dual-host mesh):
+  wallet | wallet:status                   # vault + probe /cli hubs
+  wallet:create --pass <pass> [--force]
+  wallet:address
+  wallet:balance [--cluster mainnet-beta|devnet] [--rpc <url>]
+  wallet:slot [--cluster …] [--rpc …]
+  wallet:policy --type transfer_sol --to <addr> --lamports <n>
+  wallet:hubs                              # probe cheshireterminal.ai/cli + solanaclawd.com/cli
+
 Eliza agents studio (@elizaos/cheshire-eliza → /eliza-agents):
   eliza | eliza:status                     # package + plugins + cloud readiness
   eliza:catalog                            # character seeds (Solizard first)
@@ -123,6 +157,8 @@ Public surfaces (runtime uses live HTTP — no local tree required):
 
 Examples:
   cheshire-cli status
+  cheshire-cli providers
+  cheshire-cli connect
   cheshire-cli sync
   cheshire-cli agents:list
   cheshire-cli eliza:status
@@ -132,6 +168,28 @@ Examples:
   cheshire-cli arena:register --name my-bot --model kimi-k3 --confirm --host
   cheshire-cli arena:enter --id arena_ag_… --room room_…
 `;
+}
+
+/**
+ * Report first-class provider env keys as set/unset (never print values).
+ */
+export function cmdProviders(_options = {}) {
+  const report = buildProvidersStatusReport();
+  return {
+    ok: true,
+    brand: CLI_BRAND,
+    command: "providers",
+    envNames: report.envNames,
+    providers: report.providers,
+    setCount: report.setCount,
+    note: report.note,
+    next: [
+      "export DFLOW_API_KEY=… HELIUS_API_KEY=… SOLANA_TRACKER_API_KEY=…",
+      "export JUPITER_API_KEY=… PHANTOM_APP_ID=… OKX_API_KEY=…",
+      `${CLI_NAME} status`,
+      `${CLI_NAME} connect`,
+    ],
+  };
 }
 
 // ── Agent Arena (user-registered agents on /arena) ───────────────────────────
@@ -419,22 +477,34 @@ export function buildAgentRegistryPayload(registration, options = {}) {
 export async function cmdStatus(options = {}) {
   const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
   const siteUrl = client.siteUrl;
+  const dualHubs = resolveDualHubs({
+    siteUrl,
+    solanaClawdUrl: options.solanaClawdUrl,
+  });
+  const providersReport = buildProvidersStatusReport();
 
   const result = {
     brand: CLI_BRAND,
     siteUrl,
+    solanaClawdUrl: resolveSolanaClawdUrl(options.solanaClawdUrl),
     checkedAt: new Date().toISOString(),
     developer: null,
     skills: null,
     registry: null,
     metaplex: null,
     gateway: null,
+    cliApi: null,
+    dualHubs,
+    /** First-class provider keys: set/unset only (never secret values). */
+    providers: providersReport,
     hubs: {
       cli: `${siteUrl}/cli`,
+      solanaclawdCli: SOLANA_CLAWD_HUB_URL,
       gateway: `${siteUrl}/gateway`,
       agents: `${siteUrl}/agents`,
       elizaAgents: `${siteUrl}/eliza-agents`,
       forge: `${siteUrl}/agents/forge`,
+      wallets: `${siteUrl}/wallets`,
       agentsGithub: OPEN_SOURCE_REPOS.agents.url,
       cliGithub: OPEN_SOURCE_REPOS.cli.url,
       elizaGithub: OPEN_SOURCE_REPOS.eliza.url,
@@ -443,6 +513,19 @@ export async function cmdStatus(options = {}) {
     openSource: openSourceDiscoveryFragment(),
     errors: [],
   };
+
+  // Dual-host /api/cli discovery (cheshireterminal.ai + solanaclawd.com)
+  try {
+    result.cliApi = await probeWalletCliHubs({
+      siteUrl,
+      solanaClawdUrl: options.solanaClawdUrl,
+    });
+  } catch (err) {
+    result.errors.push({
+      surface: "dual-cli-hubs",
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   try {
     const { data } = await client.get("/api/developer/status");
@@ -1407,9 +1490,15 @@ export async function cmdElizaDeploy(options = {}) {
 export async function cmdConnect(options = {}) {
   const siteUrl = resolveSiteUrl(options.siteUrl);
   const hubs = hubLinks(siteUrl);
+  const dualHubs = resolveDualHubs({
+    siteUrl,
+    solanaClawdUrl: options.solanaClawdUrl,
+  });
   return {
     brand: CLI_BRAND,
     siteUrl,
+    solanaClawdUrl: resolveSolanaClawdUrl(options.solanaClawdUrl),
+    dualHubs,
     hubs,
     sourceOfTruth: {
       hubUi: "GET /api/clawd/browser-agents → /agents",
@@ -1417,8 +1506,10 @@ export async function cmdConnect(options = {}) {
       registry: "registry.cheshireterminal.ai → /api/agent-registry → /agent-registry",
       eliza: "GET /api/eliza-agents/* → /eliza-agents (@elizaos/cheshire-eliza)",
       forge: "npm cheshire-terminal-agents (optional peer)",
+      wallet: "agentic wallet · dual /cli mesh · @solana/kit",
       upstream: OPEN_SOURCE_REPOS.agents.url,
       openSource: "agents · cli · eliza · cheshire-terminal",
+      dualCli: "cheshireterminal.ai/cli + solanaclawd.com/cli",
     },
     openSource: hubs.openSource || openSourceDiscoveryFragment(),
     endpoints: {
@@ -1458,8 +1549,14 @@ export async function cmdConnect(options = {}) {
     credentials: {
       envApiKey: "CHESHIRE_API_KEY",
       envSite: "CHESHIRE_SITE_URL",
+      envCompanion: "SOLANA_CLAWD_SITE_URL",
       headers: ["Authorization: Bearer ct_sk_…", "x-api-key: ct_sk_…"],
       note: "Same ct_sk_ keys work on /api/* and the branded /api/gateway/* alias (see /gateway).",
+    },
+    /** Trading/data provider env names (set via process env; values never listed here). */
+    providers: {
+      ...buildProvidersStatusReport(),
+      envNames: [...PROVIDER_ENV_NAMES],
     },
     npm: {
       package: CLI_PACKAGE_NAME,
@@ -1467,6 +1564,7 @@ export async function cmdConnect(options = {}) {
       npx: `npx ${CLI_PACKAGE_NAME}`,
       registry: "https://www.npmjs.com/package/cheshire-terminal-cli",
       hub: CLI_HUB_URL,
+      companionHub: SOLANA_CLAWD_HUB_URL,
       gateway: CLI_GATEWAY_URL,
     },
     forgePackage: {
@@ -1474,13 +1572,26 @@ export async function cmdConnect(options = {}) {
       bin: "cheshire-terminal-agents",
       docs: "https://www.npmjs.com/package/cheshire-terminal-agents",
     },
+    agenticWallet: {
+      package: "@x402solana/cheshire-agentic-wallet",
+      commands: [
+        "wallet:status",
+        "wallet:create",
+        "wallet:balance",
+        "wallet:policy",
+      ],
+      cliHubs: dualHubs.map((h) => h.cliHub),
+    },
     next: [
       `npm i -g ${CLI_PACKAGE_NAME}`,
       `${CLI_NAME} status`,
+      `${CLI_NAME} providers`,
+      `${CLI_NAME} wallet:status`,
+      `${CLI_NAME} wallet:create --pass <passphrase>`,
       `${CLI_NAME} register:user --wallet <pubkey>`,
       `${CLI_NAME} set-key --api-key ct_sk_…`,
       `${CLI_NAME} register:agent --dry-run`,
-      `Open ${siteUrl}/gateway for scoped API keys + OpenAPI`,
+      `Open ${siteUrl}/cli · ${SOLANA_CLAWD_HUB_URL}`,
     ],
   };
 }
@@ -1737,6 +1848,19 @@ export async function runCommand(argv) {
     browserUse: Boolean(flags["browser-use"] || flags.browserUse),
     includeBrowserUse: Boolean(flags["browser-use"] || flags.browserUse),
     preferCloud: flags["prefer-cloud"] !== "false" && flags.preferCloud !== false,
+    pass: flags.pass || flags.passphrase || process.env.CHESHIRE_WALLET_PASS,
+    passphrase: flags.pass || flags.passphrase || process.env.CHESHIRE_WALLET_PASS,
+    label: flags.label,
+    cluster: flags.cluster,
+    rpc: flags.rpc,
+    type: flags.type,
+    to: flags.to,
+    lamports: flags.lamports,
+    origin: flags.origin,
+    tx: flags.tx,
+    transactionBase64: flags.tx || flags.transaction,
+    estimatedLamports: flags["estimated-lamports"] || flags.estimatedLamports,
+    solanaClawdUrl: flags["solana-clawd"] || flags.solanaclawd || flags.companion,
     command,
   };
 
@@ -1766,6 +1890,11 @@ export async function runCommand(argv) {
         };
       case "status":
         result = await cmdStatus(opts);
+        break;
+      case "providers":
+      case "provider:status":
+      case "keys:providers":
+        result = cmdProviders(opts);
         break;
       case "sync":
       case "surfaces":
@@ -1933,6 +2062,36 @@ export async function runCommand(argv) {
           path: flags.path || flags.file || positionals[0],
           data: flags.data,
         });
+        break;
+      case "wallet":
+      case "wallet:status":
+        result = await cmdWalletStatus(opts);
+        break;
+      case "wallet:create":
+        result = await cmdWalletCreate(opts);
+        break;
+      case "wallet:address":
+        result = await cmdWalletAddress(opts);
+        break;
+      case "wallet:balance":
+        result = await cmdWalletBalance(opts);
+        break;
+      case "wallet:slot":
+        result = await cmdWalletSlot(opts);
+        break;
+      case "wallet:policy":
+        result = await cmdWalletPolicy(opts);
+        break;
+      case "wallet:hubs":
+        result = {
+          ok: true,
+          brand: CLI_BRAND,
+          hubs: await probeWalletCliHubs(opts),
+          pages: {
+            cheshire: "https://cheshireterminal.ai/cli",
+            solanaclawd: "https://solanaclawd.com/cli",
+          },
+        };
         break;
       default:
         return {

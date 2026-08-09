@@ -19,6 +19,7 @@ import {
   runCommand,
   usageText,
   cmdStatus,
+  cmdProviders,
   cmdRegisterUser,
   cmdRegisterAgent,
   cmdRegisterAll,
@@ -36,6 +37,10 @@ import {
   API_SURFACES,
   SITE_SURFACES,
 } from "./src/catalog.mjs";
+import {
+  PROVIDER_ENV_NAMES,
+  buildProvidersStatusReport,
+} from "./src/providers.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI = join(__dirname, "cheshire-cli.mjs");
@@ -63,21 +68,43 @@ describe("config", () => {
     }
   });
 
-  it("registration JSON points services at cheshireterminal.ai", async () => {
+  it("registration JSON points primary services at cheshireterminal.ai", async () => {
     const reg = await loadRegistrationJson(registrationJsonPath("cheshire-registration.json"));
     assert.equal(reg.name, "cheshire-terminal");
     assert.ok(Array.isArray(reg.services));
     for (const svc of reg.services) {
+      // Primary registration stays on cheshireterminal.ai (companion dual-hub is dual-hubs.json)
       assert.match(
         String(svc.endpoint),
         /cheshireterminal\.ai/,
         `service ${svc.name} should host on cheshireterminal.ai`,
       );
-      assert.doesNotMatch(String(svc.endpoint), /solanaclawd\.com/);
     }
   });
 
-  it("legacy registration files are rebranded", async () => {
+  it("dual-hubs.json wires cheshireterminal.ai/cli + solanaclawd.com/cli", async () => {
+    const dual = JSON.parse(
+      await readFile(join(__dirname, "dual-hubs.json"), "utf8"),
+    );
+    assert.equal(dual.primary.cliHub, "https://cheshireterminal.ai/cli");
+    assert.equal(dual.companion.cliHub, "https://solanaclawd.com/cli");
+    assert.equal(dual.primary.apiCli, "https://cheshireterminal.ai/api/cli");
+    assert.equal(dual.companion.apiCli, "https://solanaclawd.com/api/cli");
+    assert.ok(dual.agenticWallet?.package?.includes("cheshire-agentic-wallet"));
+  });
+
+  it("cheshire-config includes companion solanaclawd CLI services", async () => {
+    const cfg = JSON.parse(
+      await readFile(join(__dirname, "cheshire-config.json"), "utf8"),
+    );
+    assert.equal(cfg.siteUrl, "https://cheshireterminal.ai");
+    assert.equal(cfg.companionSiteUrl, "https://solanaclawd.com");
+    const endpoints = cfg.services.map((s) => s.endpoint);
+    assert.ok(endpoints.includes("https://cheshireterminal.ai/cli"));
+    assert.ok(endpoints.includes("https://solanaclawd.com/cli"));
+  });
+
+  it("legacy registration files still primary-brand cheshireterminal.ai", async () => {
     for (const name of [
       "clawd-registration.json",
       "solana-clawd-registration.json",
@@ -85,7 +112,6 @@ describe("config", () => {
     ]) {
       const raw = await readFile(join(__dirname, name), "utf8");
       assert.match(raw, /cheshireterminal\.ai/);
-      assert.doesNotMatch(raw, /solanaclawd\.com/);
     }
   });
 });
@@ -122,11 +148,14 @@ describe("usage / help", () => {
     assert.match(text, /--ink-smoke|ink-smoke/);
   });
 
-  it("usage text is Cheshire branded without solanaclawd primary host", () => {
+  it("usage text is Cheshire branded with dual-host companion", () => {
     const text = usageText();
     assert.match(text, /Cheshire Terminal/);
     assert.match(text, /cheshireterminal\.ai/);
-    assert.doesNotMatch(text, /solanaclawd\.com/);
+    // Primary hub remains cheshireterminal.ai; companion mesh is solanaclawd.com/cli
+    assert.match(text, /cheshireterminal\.ai\/cli/);
+    assert.match(text, /solanaclawd\.com\/cli|SOLANA_CLAWD_SITE_URL/);
+    assert.match(text, /wallet:status|agentic wallet/i);
   });
 
   it("usage text is open-source public posture (no holder/sandbox funnel)", () => {
@@ -223,7 +252,8 @@ describe("CLI process entry", () => {
     assert.match(proc.stdout, /Cheshire Terminal/);
     assert.match(proc.stdout, /cheshireterminal\.ai/);
     assert.match(proc.stdout, /\/cli|install\.sh/);
-    assert.doesNotMatch(proc.stdout, /solanaclawd\.com/);
+    // Companion dual-host is documented (not the primary default site).
+    assert.match(proc.stdout, /solanaclawd\.com\/cli|SOLANA_CLAWD/);
     assert.doesNotMatch(proc.stdout, /ct_os_/);
     assert.doesNotMatch(proc.stdout, /\/api\/e2b\/install\.sh/);
     assert.doesNotMatch(proc.stdout, /holder-gated/i);
@@ -239,7 +269,9 @@ describe("CLI process entry", () => {
     assert.match(proc.stdout, /cheshireterminal\.ai/);
     assert.match(proc.stdout, /"cliHub":\s*"https:\/\/cheshireterminal\.ai\/cli"/);
     assert.match(proc.stdout, /"cli":\s*"https:\/\/cheshireterminal\.ai\/cli"/);
-    assert.doesNotMatch(proc.stdout, /solanaclawd\.com/);
+    // Dual mesh companion hub is present for agentic wallet discovery.
+    assert.match(proc.stdout, /solanaclawd\.com\/cli/);
+    assert.match(proc.stdout, /agenticWallet|wallet:status/);
   });
 
   it("cheshire-cli.mjs --ink-smoke mounts Ink and prints success marker", () => {
@@ -262,6 +294,98 @@ describe("offline connect command", () => {
     assert.equal(result.endpoints.cliHub, "https://cheshireterminal.ai/cli");
     assert.equal(result.hubs.cli, "https://cheshireterminal.ai/cli");
     assert.equal(result.npm?.hub, "https://cheshireterminal.ai/cli");
+  });
+});
+
+describe("provider env keys (DFLOW/HELIUS/SOLANA_TRACKER/JUPITER/PHANTOM/OKX)", () => {
+  const REQUIRED = [
+    "DFLOW_API_KEY",
+    "HELIUS_API_KEY",
+    "SOLANA_TRACKER_API_KEY",
+    "JUPITER_API_KEY",
+    "PHANTOM_APP_ID",
+    "OKX_API_KEY",
+  ];
+  const DUMMY = {
+    DFLOW_API_KEY: "dflow_cli_dummy_secret_aaa111",
+    HELIUS_API_KEY: "helius_cli_dummy_secret_bbb222",
+    SOLANA_TRACKER_API_KEY: "solanatracker_cli_dummy_ccc333",
+    JUPITER_API_KEY: "jupiter_cli_dummy_secret_ddd444",
+    PHANTOM_APP_ID: "phantom_cli_dummy_app_eee555",
+    OKX_API_KEY: "okx_cli_dummy_secret_fff666",
+  };
+
+  it("usage documents all six provider env names", () => {
+    const text = usageText();
+    for (const name of REQUIRED) {
+      assert.match(text, new RegExp(name));
+    }
+    assert.match(text, /providers/);
+  });
+
+  it("PROVIDER_ENV_NAMES matches the six required names", () => {
+    assert.deepEqual([...PROVIDER_ENV_NAMES].sort(), [...REQUIRED].sort());
+  });
+
+  it("cmdProviders and connect report set/unset without leaking secrets", async () => {
+    const prev = {};
+    for (const name of REQUIRED) {
+      prev[name] = process.env[name];
+      process.env[name] = DUMMY[name];
+    }
+    try {
+      const providers = cmdProviders();
+      assert.equal(providers.ok, true);
+      assert.deepEqual([...providers.envNames].sort(), [...REQUIRED].sort());
+      assert.equal(providers.setCount, 6);
+      assert.ok(providers.providers.every((p) => p.set === true));
+
+      const connect = await cmdConnect({ siteUrl: "https://cheshireterminal.ai" });
+      assert.ok(connect.providers);
+      assert.equal(connect.providers.setCount, 6);
+
+      const blob = JSON.stringify({ providers, connect });
+      for (const v of Object.values(DUMMY)) {
+        assert.equal(
+          blob.includes(v),
+          false,
+          `secret value must not appear in CLI output: ${v.slice(0, 12)}…`,
+        );
+      }
+    } finally {
+      for (const name of REQUIRED) {
+        if (prev[name] === undefined) delete process.env[name];
+        else process.env[name] = prev[name];
+      }
+    }
+  });
+
+  it("runCommand providers dispatches to cmdProviders", async () => {
+    const { exitCode, result } = await runCommand(["providers"]);
+    assert.equal(exitCode, 0);
+    assert.ok(result?.envNames);
+    for (const name of REQUIRED) {
+      assert.ok(result.envNames.includes(name), `missing ${name}`);
+    }
+  });
+
+  it("cheshire-config.json lists provider env placeholders", async () => {
+    const raw = await readFile(join(__dirname, "cheshire-config.json"), "utf8");
+    const cfg = JSON.parse(raw);
+    for (const name of REQUIRED) {
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(cfg.env, name),
+        `cheshire-config.json env missing ${name}`,
+      );
+    }
+  });
+
+  it("buildProvidersStatusReport never embeds values", () => {
+    process.env.HELIUS_API_KEY = "must_not_leak_helius_xyz";
+    const report = buildProvidersStatusReport();
+    const text = JSON.stringify(report);
+    assert.equal(text.includes("must_not_leak_helius_xyz"), false);
+    assert.ok(report.envNames.includes("HELIUS_API_KEY"));
   });
 });
 
@@ -307,10 +431,11 @@ describe("live site commands (network)", () => {
     assert.equal(result.ok, true);
     assert.match(result.targetUrl, /cheshireterminal\.ai\/api\/agent-registry\/register/);
     assert.ok(result.payload?.name);
-    assert.doesNotMatch(JSON.stringify(result), /solanaclawd\.com/);
+    // Register payload targets Cheshire primary (not companion marketplace).
+    assert.match(result.targetUrl, /cheshireterminal\.ai/);
   });
 
-  it("connect surfaces Cheshire endpoints including gateway", async () => {
+  it("connect surfaces Cheshire endpoints including gateway + dual mesh", async () => {
     const result = await cmdConnect({ siteUrl: SITE });
     assert.match(result.endpoints.api, /cheshireterminal\.ai\/api/);
     assert.match(result.endpoints.gateway, /cheshireterminal\.ai\/gateway/);
@@ -325,16 +450,24 @@ describe("live site commands (network)", () => {
       result.endpoints.cheshireTerminalGithub,
       "https://github.com/Solizardking/cheshire-terminal",
     );
-    assert.equal(result.openSource?.repos?.length, 4);
+    assert.ok(
+      (result.openSource?.repos?.length ?? 0) >= 4,
+      "open-source repo catalog should list at least the core four",
+    );
     assert.equal(result.openSource?.productHubs?.agents, "https://cheshireterminal.ai/agents");
     assert.equal(
       result.openSource?.productHubs?.elizaAgents,
       "https://cheshireterminal.ai/eliza-agents",
     );
     assert.equal(result.credentials.envApiKey, "CHESHIRE_API_KEY");
+    assert.equal(result.credentials.envCompanion, "SOLANA_CLAWD_SITE_URL");
     assert.equal(result.npm?.package, "cheshire-terminal-cli");
     assert.match(result.npm?.install || "", /cheshire-terminal-cli/);
+    assert.equal(result.npm?.companionHub, "https://solanaclawd.com/cli");
     assert.equal(result.forgePackage.npm, "cheshire-terminal-agents");
+    assert.ok(result.agenticWallet?.package?.includes("cheshire-agentic-wallet"));
+    assert.ok(result.dualHubs?.some((h) => h.cliHub === "https://cheshireterminal.ai/cli"));
+    assert.ok(result.dualHubs?.some((h) => h.cliHub === "https://solanaclawd.com/cli"));
   });
 
   it("eliza:status hits public studio API", async () => {

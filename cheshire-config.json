@@ -1,12 +1,21 @@
 {
   "name": "cheshire-terminal",
-  "description": "Cheshire Terminal CLI defaults — site registration, skills, agents, dual-rail forge.",
-  "version": "1.0.0",
+  "description": "Cheshire Terminal CLI defaults — site registration, skills, agents, dual-rail forge, agentic wallet mesh.",
+  "version": "1.1.0",
   "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
   "siteUrl": "https://cheshireterminal.ai",
+  "companionSiteUrl": "https://solanaclawd.com",
   "env": {
     "CHESHIRE_SITE_URL": "https://cheshireterminal.ai",
-    "CHESHIRE_API_KEY": ""
+    "SOLANA_CLAWD_SITE_URL": "https://solanaclawd.com",
+    "CHESHIRE_API_KEY": "",
+    "CHESHIRE_WALLET_PASS": "",
+    "DFLOW_API_KEY": "",
+    "HELIUS_API_KEY": "",
+    "SOLANA_TRACKER_API_KEY": "",
+    "JUPITER_API_KEY": "",
+    "PHANTOM_APP_ID": "",
+    "OKX_API_KEY": ""
   },
   "services": [
     {
@@ -18,6 +27,16 @@
       "name": "api",
       "endpoint": "https://cheshireterminal.ai/api",
       "description": "REST API for skills, agents, auth, registry"
+    },
+    {
+      "name": "cli",
+      "endpoint": "https://cheshireterminal.ai/cli",
+      "description": "CLI hub — install, status, agentic wallet discovery"
+    },
+    {
+      "name": "cli-api",
+      "endpoint": "https://cheshireterminal.ai/api/cli",
+      "description": "CLI product API + install.sh + file mirror"
     },
     {
       "name": "gateway",
@@ -38,13 +57,25 @@
       "name": "x402",
       "endpoint": "https://cheshireterminal.ai/x402",
       "description": "x402 payment gateway"
+    },
+    {
+      "name": "solanaclawd-cli",
+      "endpoint": "https://solanaclawd.com/cli",
+      "description": "Companion openclawd / solana-clawd CLI hub (dual mesh)"
+    },
+    {
+      "name": "solanaclawd-api",
+      "endpoint": "https://solanaclawd.com/api",
+      "description": "Companion openclawd API (skills, agents, marketplace)"
     }
   ],
   "capabilities": {
     "solana": {
       "enabled": true,
       "rpcUrl": "${SOLANA_RPC_URL}",
-      "walletSupport": true
+      "walletSupport": true,
+      "agenticWallet": "@x402solana/cheshire-agentic-wallet",
+      "kit": "@solana/kit"
     },
     "robinhood": {
       "enabled": true,

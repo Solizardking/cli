@@ -1,0 +1,41 @@
+{
+  "name": "cheshire-solanaclawd-dual-hubs",
+  "version": "1.0.0",
+  "description": "Dual CLI mesh — Cheshire Terminal + solana-clawd / openclawd. Both hosts expose /cli and /api/cli.",
+  "primary": {
+    "id": "cheshire-terminal",
+    "siteUrl": "https://cheshireterminal.ai",
+    "cliHub": "https://cheshireterminal.ai/cli",
+    "apiCli": "https://cheshireterminal.ai/api/cli",
+    "install": "curl -fsSL https://cheshireterminal.ai/api/cli/install.sh | bash",
+    "npm": "cheshire-terminal-cli"
+  },
+  "companion": {
+    "id": "solana-clawd",
+    "siteUrl": "https://solanaclawd.com",
+    "cliHub": "https://solanaclawd.com/cli",
+    "apiCli": "https://solanaclawd.com/api/cli",
+    "install": "curl -fsSL https://solanaclawd.com/api/cli/install.sh | bash",
+    "npm": "cheshire-terminal-cli",
+    "aliases": ["openclawd", "clawd-cli"]
+  },
+  "agenticWallet": {
+    "package": "@x402solana/cheshire-agentic-wallet",
+    "cliCommands": [
+      "wallet:status",
+      "wallet:create",
+      "wallet:address",
+      "wallet:balance",
+      "wallet:slot",
+      "wallet:policy",
+      "wallet:hubs"
+    ],
+    "vaultPath": "~/.cheshire/agentic-wallet/vault.json",
+    "rpc": "@solana/kit createSolanaRpc + failover/retry"
+  },
+  "env": {
+    "CHESHIRE_SITE_URL": "https://cheshireterminal.ai",
+    "SOLANA_CLAWD_SITE_URL": "https://solanaclawd.com",
+    "CHESHIRE_WALLET_PASS": "(optional passphrase for wallet:create)"
+  }
+}

@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export CHESHIRE_SITE_URL="${CHESHIRE_SITE_URL:-https://cheshireterminal.ai}"
+export SOLANA_CLAWD_SITE_URL="${SOLANA_CLAWD_SITE_URL:-https://solanaclawd.com}"
 
 # Map legacy command aliases to Cheshire commands where needed
 CMD="${1:-help}"
@@ -35,9 +36,19 @@ case "$CMD" in
     echo "Node ops: use Cheshire connect + agent registry." >&2
     exec "$ROOT/cheshire-cli.sh" connect "$@"
     ;;
-  wallet|prices|trading|swap)
-    echo "Trading surfaces live on ${CHESHIRE_SITE_URL} — this CLI focuses on site auth, skills, and agent registration." >&2
-    exec "$ROOT/cheshire-cli.sh" connect "$@"
+  wallet|wallet:status|wallet:create|wallet:address|wallet:balance|wallet:slot|wallet:policy|wallet:hubs)
+    # Agentic wallet (local non-custodial) — dual hubs: cheshireterminal.ai/cli + solanaclawd.com/cli
+    export SOLANA_CLAWD_SITE_URL="${SOLANA_CLAWD_SITE_URL:-https://solanaclawd.com}"
+    if [[ "$CMD" == "wallet" ]]; then
+      exec "$ROOT/cheshire-cli.sh" wallet:status "$@"
+    fi
+    exec "$ROOT/cheshire-cli.sh" "$CMD" "$@"
+    ;;
+  prices|trading|swap)
+    echo "Trading: use agentic wallet + site hubs:" >&2
+    echo "  ${CHESHIRE_SITE_URL}/cli  ·  ${SOLANA_CLAWD_SITE_URL:-https://solanaclawd.com}/cli" >&2
+    echo "  cheshire-cli wallet:status | wallet:balance | wallet:policy" >&2
+    exec "$ROOT/cheshire-cli.sh" wallet:status "$@"
     ;;
   payment:supported|payment:verify|payment:settle)
     echo "x402 gateway: ${CHESHIRE_SITE_URL}/x402" >&2

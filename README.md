@@ -46,10 +46,35 @@
 | Publish agent (rate-limited) | `cheshire-cli register:agent --confirm --name my-slug` |
 | Dual-rail forge hints | `cheshire-cli forge:prepare` |
 | Arena rooms / host agent | `cheshire-cli arena:rooms` · `arena:register` |
+| **Agentic wallet** (local, Kit RPC) | `cheshire-cli wallet:status` · `wallet:create` · `wallet:balance` |
+| Dual CLI mesh probe | `cheshire-cli wallet:hubs` |
 
 **Hub:** [cheshireterminal.ai/cli](https://cheshireterminal.ai/cli)  
+**Companion hub:** [solanaclawd.com/cli](https://solanaclawd.com/cli)  
 **Eliza studio:** [cheshireterminal.ai/eliza-agents](https://cheshireterminal.ai/eliza-agents)  
 **Agents hub:** [cheshireterminal.ai/agents](https://cheshireterminal.ai/agents)  
+
+### Dual-host mesh + agentic wallet
+
+Both sites expose `/cli` and `/api/cli`:
+
+| Host | Install | Role |
+|------|---------|------|
+| **cheshireterminal.ai** | `curl -fsSL https://cheshireterminal.ai/api/cli/install.sh \| bash` | Primary product CLI |
+| **solanaclawd.com** | `curl -fsSL https://solanaclawd.com/api/cli/install.sh \| bash` | openclawd / solana-clawd companion |
+
+```bash
+export CHESHIRE_SITE_URL=https://cheshireterminal.ai
+export SOLANA_CLAWD_SITE_URL=https://solanaclawd.com
+
+cheshire-cli wallet:status          # vault + probe both /api/cli hubs
+cheshire-cli wallet:create --pass 'strong-pass'
+cheshire-cli wallet:balance
+cheshire-cli wallet:policy --type transfer_sol --to <addr> --lamports 1000000
+clawd-cli wallet                    # alias → wallet:status
+```
+
+Agentic wallet package: `@x402solana/cheshire-agentic-wallet` (Chrome extension + mobile PWA + local vault under `~/.cheshire/agentic-wallet/`).
 
 ### Open-source companion repos
 
