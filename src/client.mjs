@@ -47,12 +47,25 @@ export function createClient(opts = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(url, {
-        method,
-        headers: hdrs,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      });
+      let res;
+      try {
+        res = await fetch(url, {
+          method,
+          headers: hdrs,
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
+      } catch (err) {
+        if (err instanceof CheshireHttpError) throw err;
+        const timedOut = err?.name === "AbortError";
+        const code = err?.cause?.code || err?.code;
+        throw new CheshireHttpError(
+          timedOut
+            ? `Request timed out after ${timeoutMs}ms: ${url}`
+            : `Network error reaching ${siteUrl} (${code || err?.message || "unknown"}). Check your connection or CHESHIRE_SITE_URL.`,
+          { status: undefined, path, body: null },
+        );
+      }
       const text = await res.text();
       let data = null;
       if (text) {

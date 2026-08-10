@@ -389,9 +389,27 @@ describe("provider env keys (DFLOW/HELIUS/SOLANA_TRACKER/JUPITER/PHANTOM/OKX)", 
   });
 });
 
+/**
+ * True when an error/result came from a dead network path (DNS, timeout,
+ * unreachable host) rather than a real assertion-worthy failure. Live tests
+ * skip instead of failing so `npm test` stays green in offline/sandboxed dev
+ * environments (see [[client.mjs]] which normalizes these into
+ * CheshireHttpError with this message shape).
+ */
+const isNetworkError = (err) => {
+  const text = String(err?.message || err?.error || JSON.stringify(err) || "");
+  return /Network error reaching|Request timed out|fetch failed|ETIMEDOUT|EHOSTUNREACH|ENOTFOUND|ECONNREFUSED/i.test(
+    text,
+  );
+};
+
 describe("live site commands (network)", () => {
-  it("status returns developer/skills/registry fields", async () => {
+  it("status returns developer/skills/registry fields", async (t) => {
     const result = await cmdStatus({ siteUrl: SITE });
+    if (result.errors?.length && result.errors.every(isNetworkError)) {
+      t.skip("offline — cheshireterminal.ai unreachable");
+      return;
+    }
     assert.equal(result.brand, "Cheshire Terminal");
     assert.equal(result.siteUrl.replace(/\/$/, ""), SITE.replace(/\/$/, ""));
     assert.ok(
@@ -408,10 +426,16 @@ describe("live site commands (network)", () => {
     }
   });
 
-  it("register:user challenge returns signable payload", async () => {
+  it("register:user challenge returns signable payload", async (t) => {
     // Valid ed25519 pubkey shape (from live probe earlier / generated-like)
     const wallet = "HLzhCjtss8z7Ava8fq3nqfpaVSJTEd69HCA9fP1dbSYU";
-    const result = await cmdRegisterUser({ siteUrl: SITE, wallet });
+    let result;
+    try {
+      result = await cmdRegisterUser({ siteUrl: SITE, wallet });
+    } catch (err) {
+      if (isNetworkError(err)) return t.skip("offline — cheshireterminal.ai unreachable");
+      throw err;
+    }
     assert.equal(result.mode, "siws-challenge");
     assert.ok(result.challenge?.message);
     assert.ok(result.challenge?.nonce);
@@ -498,8 +522,12 @@ describe("live site commands (network)", () => {
     }
   });
 
-  it("runCommand status via dispatcher", async () => {
+  it("runCommand status via dispatcher", async (t) => {
     const { exitCode, result } = await runCommand(["status", "--site", SITE]);
+    if (exitCode !== 0 && result?.errors?.length && result.errors.every(isNetworkError)) {
+      t.skip("offline — cheshireterminal.ai unreachable");
+      return;
+    }
     assert.equal(exitCode, 0);
     assert.ok(result.siteUrl.includes("cheshireterminal.ai"));
   });
@@ -508,16 +536,17 @@ describe("live site commands (network)", () => {
     const text = String(err?.message || err?.error || JSON.stringify(err) || "");
     return /Payment required|"status":\s*402|status:\s*402|x402Version/i.test(text);
   };
+  const isSkippableLiveError = (err) => isStaleHost402(err) || isNetworkError(err);
 
-  it("agents:list returns catalog ids from live browser-agents", async () => {
+  it("agents:list returns catalog ids from live browser-agents", async (t) => {
     // The catalog GET is free-bootstrapped in source (isX402FreeBootstrapPath),
-    // but a stale production host may still 402 until redeployed. Treat
-    // "Payment required" as deployment-lag and skip instead of failing publish.
+    // but a stale production host may still 402 until redeployed, and a dev
+    // sandbox may simply be offline. Skip instead of failing in either case.
     let result;
     try {
       result = await cmdAgents({ siteUrl: SITE, list: true });
     } catch (err) {
-      if (isStaleHost402(err)) return; // skip — fresh deploy will flip this back on
+      if (isSkippableLiveError(err)) return t.skip("offline or stale host — skipping");
       throw err;
     }
     assert.ok(result.count > 0);
@@ -526,12 +555,12 @@ describe("live site commands (network)", () => {
     assert.match(result.hub, /\/agents$/);
   });
 
-  it("register:agent --id dry-run uses catalog agent", async () => {
+  it("register:agent --id dry-run uses catalog agent", async (t) => {
     let list;
     try {
       list = await cmdAgents({ siteUrl: SITE, list: true });
     } catch (err) {
-      if (isStaleHost402(err)) return; // skip — fresh deploy will flip this back on
+      if (isSkippableLiveError(err)) return t.skip("offline or stale host — skipping");
       throw err;
     }
     const id = list.identifiers?.[0];
@@ -547,9 +576,8 @@ describe("live site commands (network)", () => {
     assert.match(result.frontend?.registry || "", /agent-registry/);
   });
 
-  it("register:all dry-run covers catalog slice", async () => {
-    // Same deployment-lag tolerance: if the live catalog throws 402, skip
-    // instead of failing `npm publish` (prepublishOnly runs this suite).
+  it("register:all dry-run covers catalog slice", async (t) => {
+    // Same deployment-lag / offline tolerance (prepublishOnly runs this suite).
     let result;
     try {
       result = await cmdRegisterAll({
@@ -558,7 +586,7 @@ describe("live site commands (network)", () => {
         limit: 3,
       });
     } catch (err) {
-      if (isStaleHost402(err)) return; // skip — fresh deploy will flip this back on
+      if (isSkippableLiveError(err)) return t.skip("offline or stale host — skipping");
       throw err;
     }
     assert.equal(result.mode, "dry-run");
@@ -566,8 +594,12 @@ describe("live site commands (network)", () => {
     assert.equal(result.succeeded, 3);
   });
 
-  it("sync reports skills + agents + registry hubs", async () => {
+  it("sync reports skills + agents + registry hubs", async (t) => {
     const result = await cmdSync({ siteUrl: SITE });
+    if (!result.ok && result.errors?.length && result.errors.every(isNetworkError)) {
+      t.skip("offline — cheshireterminal.ai unreachable");
+      return;
+    }
     assert.ok(result.skills?.count > 0 || result.agents?.count > 0);
     assert.match(result.hubs?.skills || "", /\/skills/);
     assert.match(result.hubs?.agents || "", /\/agents/);
