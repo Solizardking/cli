@@ -126,6 +126,10 @@ export const SITE_SURFACES = {
 export const API_SURFACES = {
   skills: "/api/skills",
   skillsSearch: "/api/skills/search",
+  skillsStore: "/api/skills-store",
+  skillScannerValidate: "/api/skill-scanner/validate",
+  skillScannerSave: "/api/skill-scanner/save",
+  skillScannerUserSkills: "/api/skill-scanner/user-skills",
   browserAgents: "/api/clawd/browser-agents",
   browserAgentsDefi: "/api/clawd/browser-agents/pack/defi-agents",
   registryStatus: "/api/agent-registry/status",
