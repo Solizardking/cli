@@ -83,7 +83,7 @@
     "wallet": "node ./bin/cheshire-cli.js wallet:status",
     "tui": "node ./bin/cheshire-cli.js tui",
     "ink-smoke": "node ./bin/cheshire-cli.js --ink-smoke",
-    "test": "node --test ./cheshire-cli.test.mjs ./arena-register.test.mjs ./src/ink/app.test.mjs ./src/wallet.test.mjs",
+    "test": "node --test ./cheshire-cli.test.mjs ./arena-register.test.mjs ./src/ink/app.test.mjs ./src/wallet.test.mjs ./src/keys.test.mjs",
     "prepack": "node --check bin/cheshire-cli.js && node --check cheshire-cli.mjs && node --check src/config.mjs && node --check src/client.mjs && node --check src/catalog.mjs && node --check src/providers.mjs && node --check src/commands.mjs && node --check src/wallet.mjs && node --check src/index.mjs && node --check src/ink/Banner.mjs && node --check src/ink/App.mjs && node --check src/ink/entry.mjs && node --check src/ink/smoke.mjs",
     "prepublishOnly": "npm test"
   },
