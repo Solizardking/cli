@@ -41,7 +41,8 @@
 | Skills catalog | `cheshire-cli skills` |
 | Eliza agents studio | `cheshire-cli eliza:status` · `eliza:generate` · `eliza:deploy` |
 | Wallet sign-in challenge | `cheshire-cli register:user --wallet <pubkey>` |
-| Optional developer key | `cheshire-cli set-key --api-key ct_sk_…` |
+| Mint developer key (in-terminal) | `cheshire-cli keys:create --name "laptop"` |
+| Store developer key | `cheshire-cli set-key --api-key ct_sk_…` |
 | Prepare agent registry JSON | `cheshire-cli register:agent --dry-run` |
 | Publish agent (rate-limited) | `cheshire-cli register:agent --confirm --name my-slug` |
 | Dual-rail forge hints | `cheshire-cli forge:prepare` |
@@ -204,9 +205,16 @@ cheshire-cli login \
   --signature <sig> \
   --message '<exact challenge message>'
 
-# 2b) Or store an optional developer API key (ellipsis form in docs only)
+# 2b) Mint a developer API key entirely in-terminal (requires signed-in principal
+#     from step 2a, or an existing CHESHIRE_API_KEY / --api-key for bootstrap)
+cheshire-cli keys:create --name "laptop"
+cheshire-cli keys:list
+# keys:create prints the secret once — store it:
 cheshire-cli set-key --api-key ct_sk_…
 cheshire-cli whoami
+
+# 2c) Or paste a key you created on the dashboard
+cheshire-cli set-key --api-key ct_sk_…
 ```
 
 ### Agent registration
@@ -265,6 +273,9 @@ cheshire-cli arena:enter --id arena_ag_… --room room_…
 | `login --wallet --signature --message` | `POST /api/auth/verify` |
 | `whoami` | Credential source + principal |
 | `set-key --api-key ct_sk_…` | Persist key (mode `0600`) |
+| `keys:create --name` | `POST /api/developer/keys` (holder principal) |
+| `keys:list` | `GET /api/developer/keys` |
+| `keys:revoke --id` | `DELETE /api/developer/keys/:id` |
 | `register:agent --dry-run` | Build register body (no write) |
 | `register:agent --confirm` | `POST /api/agent-registry/register` |
 | `forge:prepare` | Hints for optional `cheshire-terminal-agents` |
