@@ -86,6 +86,10 @@ Discovery (public site surfaces):
   help | status | connect | providers | sync
   tui | repl | --ink-smoke               → Ink interactive shell / CI smoke
   skills [query] | skills:search <q>       → /skills · /api/skills
+  skills:store [query]                     → /skills-store · /api/skills-store
+  skills:mine                              → your listed skills (API key)
+  skills:validate --path <dir>             → scan a local skill folder (public)
+  skills:publish --path <dir> [--confirm]  → list skill on /skills-store (API key)
   agents | agents:list | agents:show --id  → /agents · /api/clawd/browser-agents
   registry | registry:list                 → /agent-registry · /api/agent-registry
 
@@ -158,6 +162,8 @@ IPFS pin helpers (when Pinata is configured server-side):
 Public surfaces (runtime uses live HTTP — no local tree required):
   Agents     GET /api/clawd/browser-agents → /agents
   Skills     GET /api/skills → /skills
+  Store      GET /api/skills-store → /skills-store
+  Publish    POST /api/skill-scanner/save → list on /skills-store (API key)
   Registry   GET /api/agent-registry → /agent-registry
   Eliza      GET /api/eliza-agents/* → /eliza-agents
   Forge npm  cheshire-terminal-agents (optional peer)
@@ -650,6 +656,280 @@ export async function cmdSkills(options = {}) {
     hubStore: hubs.skillsStore,
     api: hubs.api.skills,
     ...normalizeSkillsPayload(data),
+  };
+}
+
+/**
+ * List packages on the public Skills Store (curated + community + user-listed).
+ */
+export async function cmdSkillsStore(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const hubs = hubLinks(client.siteUrl);
+  const { data } = await client.get(API_SURFACES.skillsStore);
+  const query = options.query?.trim()?.toLowerCase();
+  let skills = Array.isArray(data?.skills) ? data.skills : [];
+  if (query) {
+    skills = skills.filter((s) => {
+      const hay = [s.name, s.dirName, s.slug, s.description, s.source, s.path]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(query);
+    });
+  }
+  return {
+    ok: true,
+    siteUrl: client.siteUrl,
+    hub: hubs.skillsStore,
+    api: hubs.api.skillsStore,
+    count: typeof data?.count === "number" ? data.count : skills.length,
+    curatedCount: data?.curatedCount ?? null,
+    importedCount: data?.importedCount ?? null,
+    userCount: data?.userCount ?? null,
+    version: data?.version ?? null,
+    install: data?.install ?? null,
+    publish: data?.publish ?? {
+      cli: `${CLI_NAME} skills:publish --path ./my-skill`,
+      lab: `${client.siteUrl}/skills/lab`,
+    },
+    query: query || null,
+    matched: skills.length,
+    skills: skills.map((s) => ({
+      name: s.name,
+      dirName: s.dirName || s.slug,
+      source: s.source || (s.path?.startsWith("skills-store/") ? "curated" : "skills"),
+      description: s.description,
+      path: s.path,
+      skillMdUrl: s.skillMdUrl,
+      install: s.install,
+    })),
+  };
+}
+
+/** List skills you have listed (requires API key / session). */
+export async function cmdSkillsMine(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const hubs = hubLinks(client.siteUrl);
+  const { data } = await client.get(API_SURFACES.skillScannerUserSkills);
+  return {
+    ok: true,
+    siteUrl: client.siteUrl,
+    hub: hubs.skillsStore,
+    api: hubs.api.skillScannerUserSkills,
+    count: data?.count ?? (Array.isArray(data?.skills) ? data.skills.length : 0),
+    database: data?.database ?? null,
+    skills: data?.skills ?? [],
+    next: [
+      `${CLI_NAME} skills:publish --path ./my-skill --confirm`,
+      `${CLI_NAME} skills:store`,
+      `${client.siteUrl}/skills-store`,
+    ],
+  };
+}
+
+/**
+ * Read a local skill directory into the draft shape expected by skill-scanner.
+ * Pure filesystem helper — used by validate + publish.
+ */
+export async function loadLocalSkillDraft(skillPath, options = {}) {
+  const { readdir, readFile, stat } = await import("node:fs/promises");
+  const pathMod = await import("node:path");
+  const root = pathMod.resolve(skillPath);
+  const st = await stat(root);
+  if (!st.isDirectory()) {
+    throw new Error(`--path must be a skill directory containing SKILL.md: ${root}`);
+  }
+  const skillMdPath = pathMod.join(root, "SKILL.md");
+  let skillMd;
+  try {
+    skillMd = await readFile(skillMdPath, "utf8");
+  } catch {
+    throw new Error(`Missing SKILL.md in ${root}`);
+  }
+  if (!skillMd.startsWith("---")) {
+    throw new Error("SKILL.md must start with YAML frontmatter (---)");
+  }
+
+  const files = [{ path: "SKILL.md", content: skillMd }];
+  const maxFiles = options.maxFiles ?? 40;
+  const maxDepth = options.maxDepth ?? 3;
+
+  async function walk(dir, relBase, depth) {
+    if (depth > maxDepth || files.length >= maxFiles) return;
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const abs = pathMod.join(dir, entry.name);
+      const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await walk(abs, rel, depth + 1);
+        continue;
+      }
+      if (rel === "SKILL.md") continue;
+      if (files.length >= maxFiles) break;
+      // Text-ish companions only
+      if (!/\.(md|json|ya?ml|txt|ts|js|mjs|cjs|sh|toml)$/i.test(entry.name)) continue;
+      try {
+        const content = await readFile(abs, "utf8");
+        if (Buffer.byteLength(content, "utf8") > 512 * 1024) continue;
+        files.push({ path: rel, content });
+      } catch {
+        /* skip unreadable */
+      }
+    }
+  }
+  await walk(root, "", 0);
+
+  const nameMatch = /^name:\s*(.+)$/m.exec(skillMd);
+  const descMatch = /^description:\s*(.+)$/m.exec(skillMd);
+  let description = descMatch ? descMatch[1].trim().replace(/^["']|["']$/g, "") : "";
+  if (/^[>|]/.test(description) || !description) {
+    // Folded block description — pull a plain one-liner from body or use placeholder
+    const body = skillMd.replace(/^---[\s\S]*?\n---\s*/, "");
+    const firstLine = body
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l && !l.startsWith("#"));
+    description =
+      description && !/^[>|]/.test(description)
+        ? description
+        : firstLine || "User-listed skill on Cheshire Skills Store.";
+  }
+  const dirBase = pathMod.basename(root);
+  const slugRaw = (options.slug || nameMatch?.[1] || dirBase)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  const slug = slugRaw || dirBase.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  const name = (nameMatch?.[1] || slug).trim().replace(/^["']|["']$/g, "");
+
+  return {
+    root,
+    slug,
+    name,
+    description,
+    category: options.category || "Utilities",
+    files,
+  };
+}
+
+/** Public non-persisting scanner validate for a local skill folder. */
+export async function cmdSkillsValidate(options = {}) {
+  const skillPath = options.path || options.file;
+  if (!skillPath) {
+    throw new Error("Usage: skills:validate --path ./my-skill");
+  }
+  const draft = await loadLocalSkillDraft(skillPath, options);
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const hubs = hubLinks(client.siteUrl);
+  const { data } = await client.post(API_SURFACES.skillScannerValidate, {
+    slug: draft.slug,
+    name: draft.name,
+    description: draft.description,
+    files: draft.files,
+  });
+  return {
+    ok: data?.risk?.status !== "required",
+    siteUrl: client.siteUrl,
+    hub: hubs.skillsStore,
+    api: API_SURFACES.skillScannerValidate,
+    path: draft.root,
+    slug: draft.slug,
+    name: draft.name,
+    fileCount: draft.files.length,
+    risk: data?.risk ?? null,
+    findings: data?.findings ?? [],
+    next: [
+      `${CLI_NAME} skills:publish --path ${skillPath} --confirm`,
+      `${client.siteUrl}/skills-store`,
+    ],
+  };
+}
+
+/**
+ * Publish / list a local skill folder on cheshireterminal.ai/skills-store.
+ * Requires CHESHIRE_API_KEY (or --api-key). Use --confirm to actually save.
+ */
+export async function cmdSkillsPublish(options = {}) {
+  const skillPath = options.path || options.file;
+  if (!skillPath) {
+    throw new Error(
+      `Usage: ${CLI_NAME} skills:publish --path ./my-skill --confirm\n` +
+        `Requires API key: export CHESHIRE_API_KEY=ct_sk_… or --api-key`,
+    );
+  }
+  const draft = await loadLocalSkillDraft(skillPath, options);
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const hubs = hubLinks(client.siteUrl);
+
+  // Always validate first (public)
+  const { data: validation } = await client.post(API_SURFACES.skillScannerValidate, {
+    slug: draft.slug,
+    name: draft.name,
+    description: draft.description,
+    files: draft.files,
+  });
+
+  if (!options.confirm) {
+    return {
+      ok: true,
+      dryRun: true,
+      siteUrl: client.siteUrl,
+      hub: hubs.skillsStore,
+      path: draft.root,
+      slug: draft.slug,
+      name: draft.name,
+      description: draft.description,
+      fileCount: draft.files.length,
+      risk: validation?.risk ?? null,
+      findings: validation?.findings ?? [],
+      note: "Dry run only. Re-run with --confirm to list this skill on /skills-store.",
+      next: [
+        `${CLI_NAME} skills:publish --path ${skillPath} --confirm`,
+        `export CHESHIRE_API_KEY=ct_sk_…`,
+        `${client.siteUrl}/skills-store`,
+        `${client.siteUrl}/skills/lab`,
+      ],
+    };
+  }
+
+  const { data } = await client.post(API_SURFACES.skillScannerSave, {
+    slug: draft.slug,
+    name: draft.name,
+    description: draft.description,
+    category: draft.category,
+    files: draft.files,
+    force: Boolean(options.force),
+  });
+
+  return {
+    ok: Boolean(data?.ok ?? true),
+    dryRun: false,
+    siteUrl: client.siteUrl,
+    hub: hubs.skillsStore,
+    path: draft.root,
+    slug: data?.slug || draft.slug,
+    storeUrl: data?.storeUrl || `/skills-store`,
+    storePage: `${client.siteUrl}${data?.storeUrl || "/skills-store"}`,
+    storeApiUrl: data?.storeApiUrl || `/api/skills-store/${encodeURIComponent(draft.slug)}`,
+    catalogUrl: data?.catalogUrl || `/skills#${draft.slug}`,
+    catalogPage: `${client.siteUrl}${data?.catalogUrl || `/skills#${draft.slug}`}`,
+    database: data?.database ?? null,
+    registered: data?.registered ?? true,
+    listedOnStore: data?.listedOnStore ?? true,
+    risk: data?.risk ?? validation?.risk ?? null,
+    findings: data?.findings ?? validation?.findings ?? [],
+    next: [
+      `${CLI_NAME} skills:store ${draft.slug}`,
+      `${CLI_NAME} skills:mine`,
+      `${client.siteUrl}/skills-store`,
+    ],
   };
 }
 
@@ -1986,6 +2266,40 @@ export async function runCommand(argv) {
         break;
       case "skills:search":
         result = await cmdSkills({ ...opts, query: positionals[0] || flags.query });
+        break;
+      case "skills:store":
+      case "skills-store":
+      case "store:skills":
+      case "skills:store:list":
+        result = await cmdSkillsStore({
+          ...opts,
+          query: flags.query || positionals[0],
+        });
+        break;
+      case "skills:mine":
+      case "skills:user":
+      case "skills:listed":
+        result = await cmdSkillsMine(opts);
+        break;
+      case "skills:validate":
+      case "skills:scan":
+        result = await cmdSkillsValidate({
+          ...opts,
+          path: flags.path || flags.file || positionals[0],
+          slug: flags.slug,
+        });
+        break;
+      case "skills:publish":
+      case "skills:list-on-store":
+      case "skills:upload":
+        result = await cmdSkillsPublish({
+          ...opts,
+          path: flags.path || flags.file || positionals[0],
+          slug: flags.slug,
+          category: flags.category || flags.tag,
+          confirm: Boolean(flags.confirm),
+          force: Boolean(flags.force),
+        });
         break;
       case "agents":
         result = await cmdAgents(opts);

@@ -303,6 +303,9 @@ export function hubLinks(siteUrl) {
     github: openSource.github,
     api: {
       skills: `${base}${API_SURFACES.skills}`,
+      skillsStore: `${base}${API_SURFACES.skillsStore}`,
+      skillScannerSave: `${base}${API_SURFACES.skillScannerSave}`,
+      skillScannerUserSkills: `${base}${API_SURFACES.skillScannerUserSkills}`,
       browserAgents: `${base}${API_SURFACES.browserAgents}`,
       registryStatus: `${base}${API_SURFACES.registryStatus}`,
       registryAgents: `${base}${API_SURFACES.registryAgents}`,

@@ -13,6 +13,18 @@ shift || true
 
 case "$CMD" in
   skills:list)   exec "$ROOT/cheshire-cli.sh" skills "$@" ;;
+  skills:store|skills-store|skills:store:list)
+    exec "$ROOT/cheshire-cli.sh" skills:store "$@"
+    ;;
+  skills:publish|skills:upload|skills:list-on-store)
+    exec "$ROOT/cheshire-cli.sh" skills:publish "$@"
+    ;;
+  skills:validate|skills:scan)
+    exec "$ROOT/cheshire-cli.sh" skills:validate "$@"
+    ;;
+  skills:mine|skills:listed)
+    exec "$ROOT/cheshire-cli.sh" skills:mine "$@"
+    ;;
   skills:featured)
     exec "$ROOT/cheshire-cli.sh" skills "$@"
     ;;
