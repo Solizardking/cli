@@ -133,6 +133,7 @@ export const API_SURFACES = {
   registrySkills: "/api/agent-registry/v0/skills",
   registryRegister: "/api/agent-registry/register",
   developerStatus: "/api/developer/status",
+  developerKeys: "/api/developer/keys",
   gatewayStatus: "/api/gateway/status",
   metaplexHealth: "/api/metaplex-agents/health",
   arenaStatus: "/api/arena/status",

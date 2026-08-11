@@ -79,7 +79,8 @@ ${providerEnvUsageLines()}
 Auth (optional — never paste private keys into the CLI):
   SIWS     register:user → sign challenge in your wallet → login
   API key  set-key --api-key ct_sk_…  or  export CHESHIRE_API_KEY=ct_sk_…
-           Create keys at ${CLI_GATEWAY_URL} when the site requires them
+           Generate one in-terminal: keys:create --name "my laptop" (see below)
+           or create one at ${CLI_GATEWAY_URL}
 
 Discovery (public site surfaces):
   help | status | connect | providers | sync
@@ -92,6 +93,13 @@ User registration / auth:
   register:user --wallet <base58>
   login --wallet <pk> --signature <sig> --message <msg>
   whoami | set-key --api-key ct_sk_…
+
+Developer API keys (entirely in-terminal, once signed in above):
+  keys:create --name <label> [--scopes a,b] [--expiresAt <ISO date>]
+  keys:list
+  keys:revoke --id <key-id>
+    Free to generate (no $CLAWD/tier required) — this is a scoped ct_sk_ key,
+    shown once. Paid tiers (billing) are purchased on the site, not the CLI.
 
 Access verify (public non-holder + holder — stores receipt):
   access --wallet <base58>                 # live tier probe (no sign)
@@ -1129,6 +1137,78 @@ export async function cmdSetKey(options = {}) {
   };
 }
 
+// ── Developer API keys (register → login → generate a key, entirely in-terminal) ──
+// These are free once you have a signed-in principal — "purchasing" here means
+// generating a scoped ct_sk_ developer key, not a paid tier. For paid tiers
+// (billing/purchase), sign in on the site — the CLI doesn't build on-chain
+// payment transactions itself.
+
+export async function cmdKeysCreate(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const name = options.name?.trim();
+  if (!name) throw new Error("keys:create requires --name <label> (e.g. --name \"laptop\")");
+
+  const body = { name };
+  if (options.scopes) {
+    body.scopes = Array.isArray(options.scopes)
+      ? options.scopes
+      : String(options.scopes).split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  if (options.expiresAt) body.expiresAt = options.expiresAt;
+
+  try {
+    const { data } = await client.post(API_SURFACES.developerKeys, body);
+    return {
+      ok: true,
+      brand: CLI_BRAND,
+      siteUrl: client.siteUrl,
+      key: data.key,
+      record: data.record,
+      warning: data.warning,
+      note: 'Store this now — only shown once. Run `cheshire-cli set-key --api-key <key>` to use it for future commands, or export CHESHIRE_API_KEY.',
+    };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      const authHint =
+        err.status === 401
+          ? " No signed-in principal — run `cheshire-cli register:user --wallet <pk>` then `login`, or pass an existing --api-key."
+          : "";
+      return { ok: false, error: `${err.message}${authHint}`, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+export async function cmdKeysList(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  try {
+    const { data } = await client.get(API_SURFACES.developerKeys);
+    return { ok: true, brand: CLI_BRAND, siteUrl: client.siteUrl, ...data };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
+export async function cmdKeysRevoke(options = {}) {
+  const client = createClient({ siteUrl: options.siteUrl, apiKey: options.apiKey });
+  const id = options.id ?? options.keyId;
+  if (!id) throw new Error("keys:revoke requires --id <key-id> (see `keys:list` for ids)");
+  try {
+    const { status } = await client.request("DELETE", `${API_SURFACES.developerKeys}/${encodeURIComponent(id)}`, {
+      apiKey: options.apiKey,
+    });
+    return { ok: status === 204, brand: CLI_BRAND, siteUrl: client.siteUrl, revoked: status === 204, id };
+  } catch (err) {
+    if (err instanceof CheshireHttpError) {
+      return { ok: false, error: err.message, status: err.status, body: err.body };
+    }
+    throw err;
+  }
+}
+
 export async function cmdRegisterAgent(options = {}) {
   const siteUrl = resolveSiteUrl(options.siteUrl);
   const hubs = hubLinks(siteUrl);
@@ -1962,6 +2042,18 @@ export async function runCommand(argv) {
       case "set-key":
       case "login:key":
         result = await cmdSetKey(opts);
+        break;
+      case "keys:create":
+      case "keys:new":
+      case "keys:generate":
+        result = await cmdKeysCreate(opts);
+        break;
+      case "keys:list":
+        result = await cmdKeysList(opts);
+        break;
+      case "keys:revoke":
+      case "keys:delete":
+        result = await cmdKeysRevoke(opts);
         break;
       case "register":
       case "register:agent":
